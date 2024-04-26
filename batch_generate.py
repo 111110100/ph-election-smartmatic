@@ -21,6 +21,8 @@ CONTESTS = {
 
 PROGRESS_BAR_TOGGLE: bool = os.environ.get("PROGRESS_BAR", False)
 NUMBER_OF_WORKERS: int = os.cpu_count() or 8
+WORKING_DIR: str = os.environ.get("WORKING_DIR", "./var/")
+STATIC_DIR: str = os.environ.get("STATIC_DIR", WORKING_DIR + "static")
 
 
 class Election:
@@ -42,6 +44,90 @@ def timeit(func: Callable) -> Callable:
     return timeit_wrapper
 
 
+@timeit
+def read_results() -> Election:
+    """
+    Reads CSV files, populates the Election class, and returns the Election class instance.
+
+    Returns:
+        Election: Election class instance containing data.
+    """
+    print("Reading CSV files...")
+    _election_results = Election()
+    _election_results = Election()
+    _progress = tqdm(range(6), disable=PROGRESS_BAR_TOGGLE)
+    _progress.set_description("Candidates")
+    _election_results.candidates = pl.scan_csv(
+        WORKING_DIR + "candidates.csv",
+        separator="|",
+        has_header=True
+    ).collect(streaming=True)
+    _progress.update(1)
+    _progress.refresh()
+
+    _progress.set_description("Contests")
+    _election_results.contests = pl.scan_csv(
+        WORKING_DIR + "contests.csv",
+        separator="|",
+        has_header=True
+    ).select("CONTEST_CODE").collect(streaming=True)
+    _progress.update(1)
+    _progress.refresh()
+
+    _progress.set_description("Parties")
+    _election_results.parties = pl.scan_csv(
+        WORKING_DIR + "parties.csv",
+        separator="|",
+        has_header=True
+    ).collect(streaming=True)
+    _progress.update(1)
+    _progress.refresh()
+
+    _progress.set_description("Precincts")
+    _election_results.precincts = pl.scan_csv(
+        WORKING_DIR + "precincts.csv",
+        separator="|",
+        has_header=True
+    ).select(["VCM_ID", "REG_NAME", "PRV_NAME", "CLUSTERED_PREC", "REGISTERED_VOTERS"])
+    _progress.update(1)
+    _progress.refresh()
+
+    _progress.set_description("Results")
+    _election_results.results= pl.scan_csv(
+        WORKING_DIR + "results.csv",
+        separator="|",
+        has_header=True
+    )
+    _progress.update(1)
+    _progress.refresh()
+
+    # Convert str time
+    _election_results.results.with_columns(
+        pl.col("RECEPTION_DATE").str.to_datetime("%d/%m/%Y - %I:%M:%S %p")
+    )
+
+    _progress.set_description("Merging")
+    # Somehow, this "fixes" a performance problem I have when I do:
+    #   filtered_results = results.filter(pl.col("CONTESNT_CODE") == contest_code)
+    # by doing collect() when merging
+    _election_results.results = _election_results.results.join(
+       _election_results.precincts.select(
+           "REG_NAME",
+           "PRV_NAME",
+           "CLUSTERED_PREC",
+           "REGISTERED_VOTERS",
+       ),
+       how="left",
+       left_on="PRECINCT_CODE",
+       right_on="CLUSTERED_PREC"
+    ).collect(streaming=True)
+    _progress.update(1)
+    _progress.set_description("")
+    _progress.close()
+
+    return _election_results
+
+    
 def main(cmds: List[str]) -> Union[bool, None]:
     """
     Generates static files from Smartmatic VCMs. Commands available:
