@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import List, Callable, Any
+from typing import List, Callable, Union, Any
 from tqdm import tqdm
 from functools import wraps
 import polars as pl
@@ -19,7 +19,7 @@ CONTESTS = {
 }
 
 
-PROGRESS_BAR_TOGGLE: bool = os.environ["PROGRESS_BAR"] or False
+PROGRESS_BAR_TOGGLE: bool = os.environ.get("PROGRESS_BAR", False)
 NUMBER_OF_WORKERS: int = os.cpu_count() or 8
 
 
@@ -42,7 +42,50 @@ def timeit(func: Callable) -> Callable:
     return timeit_wrapper
 
 
-def main(cmds: List[str]) -> None:
+def main(cmds: List[str]) -> Union[bool, None]:
+    """
+    Generates static files from Smartmatic VCMs. Commands available:
+
+    tally-national - results for national contests.
+
+    tally-local - results for local contests.
+
+    leading-candidate-province - leading candidate per province.
+
+    tally-national-province - results for national contests per province.
+
+    stats - Generate stats.
+
+    read-results - just read the results. Use this with -i when running the script for debugging.
+
+    all - runs all commands except load.
+    """
+    commands_available = (
+        "tally-national",
+        "tally-local",
+        "leading-candidate-province",
+        "tally-national-province",
+        "stats",
+        "read-results",
+        "all",
+    )
+
+    for cmd in cmds:
+        if cmd not in commands_available:
+            print(f"Command {cmd} not available.\nAvailable commands:\n")
+            for cmd in commands_available:
+                print(cmd)
+            return False
+
+    if "all" in cmds:
+        cmds = commands_available
+
+    Election_results = read_results()
+    for cmd in cmds:
+        cmd = cmd.replace("-", "_")
+        if cmd not in ["all", "read_results"]:
+            globals()[cmd](Election_results)
+
     return None
     
 
