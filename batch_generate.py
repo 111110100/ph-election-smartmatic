@@ -37,7 +37,7 @@ def timeit(func: Callable) -> Callable:
         _toc = time.perf_counter()
         _result = func(*args, **kwargs)
         _tic = time.perf_counter()
-        print(f"{func.__name__}" took {_tic - _toc:.4f} seconds)
+        print(f"{func.__name__} took {_tic - _toc:.4f} seconds")
         return _result
     return timeit_wrapper
 
