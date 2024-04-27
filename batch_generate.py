@@ -67,6 +67,45 @@ def generate_tally_contest(results: pl.DataFrame, candidates: pl.DataFrame, cont
 
     return None
 
+
+@timeit
+def tally_national(Election: Election) -> None:
+    """
+    Generates results for national contests and saves the results in CSV files.
+
+    Parameters:
+        Election (Election): Election class instance containing data.
+
+    Returns:
+        None
+    """
+    print("Generating results for national contests...")
+    _contest_codes = list(CONTESTS.values())
+    _national_results = (
+        Election.results[["CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
+        .filter(pl.col("CONTEST_CODE").is_in(_contest_codes))
+        .group_by(["CONTEST_CODE", "CANDIDATE_CODE"])
+        .agg(pl.col("VOTES_AMOUNT").sum())
+    )
+    _number_voters = Election.results.unique("PRECINCT_CODE")["NUMBER_VOTERS"].sum()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
+        _futures = []
+        for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+            _national_tally = _national_results.filter(
+                pl.col("CONTEST_CODE") == _contest_code
+            )
+            _futures.append(
+                _exec.submit(
+                    generate_tally_contest,
+                    _national_tally, Election.candidates, _contest_code, _number_voters
+                )
+            )
+    concurrent.futures.wait(_futures)
+
+    return None
+
+
 @timeit
 def tally_local(Election: Election) -> None:
     """
@@ -195,7 +234,8 @@ def read_results() -> Election:
 
     return _election_results
 
-    
+
+@timeit
 def main(cmds: List[str]) -> Union[bool, None]:
     """
     Generates static files from Smartmatic VCMs. Commands available:
