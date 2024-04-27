@@ -44,6 +44,69 @@ def timeit(func: Callable) -> Callable:
     return timeit_wrapper
 
 
+def generate_leading_candidate(results: pl.DataFrame, candidates: pl.DataFrame, contest_code: int) -> None:
+    """
+    Generates leading candidates per province and saves the results in a CSV file.
+
+    Parameters:
+        results (pd.DataFrame): DataFrame containing election results.
+        candidates (pd.DataFrame): DataFrame containing candidate information.
+        contest_code (int): Code representing the election contest.
+
+    Returns:
+        None
+    """
+    _prv_df = (
+        results.group_by("PRV_NAME", "CANDIDATE_CODE")
+        .agg(pl.col("VOTES_AMOUNT").sum())
+        .sort(by="VOTES_AMOUNT", descending=True)
+        .unique(subset="PRV_NAME")
+    )
+    _prv_df = _prv_df.join(
+        candidates,
+        on="CANDIDATE_CODE"
+    )
+    _prv_df[["PRV_NAME", "CANDIDATE_NAME", "VOTES_AMOUNT"]].write_csv(
+        f"{STATIC_DIR}/map-{contest_code}.csv",
+        separator=","
+    )
+
+    return None
+
+
+@timeit
+def leading_candidate_province(Election: Election) -> None:
+    """
+    Generates leading candidates for each province and saves the results in CSV files.
+
+    Parameters:
+        Election (Election): Election class instance containing data.
+
+    Returns:
+        None
+    """
+    print("Generating leading national candidate per province...")
+    _contest_codes = list(CONTESTS.values())
+    _national_results = (
+        Election.results[["PRV_NAME", "CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
+        .filter(pl.col("CONTEST_CODE").is_in(_contest_codes))
+    )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
+        _futures = []
+        for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+            _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
+            _futures.append(
+                _exec.submit(
+                    generate_leading_candidate,
+                    _national_tally, Election.candidates, _contest_code
+                )
+            )
+        concurrent.futures.wait(_futures)
+
+    return None
+
+
 def generate_tally_contest(results: pl.DataFrame, candidates: pl.DataFrame, contest_code: int, number_votes: int) -> None:
     """
     Generates tallies for a specific contest and saves the results in a CSV file.
