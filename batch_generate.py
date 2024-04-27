@@ -22,7 +22,7 @@ CONTESTS = {
 PROGRESS_BAR_TOGGLE: bool = os.environ.get("PROGRESS_BAR", False)
 NUMBER_OF_WORKERS: int = os.cpu_count() or 8
 WORKING_DIR: str = os.environ.get("WORKING_DIR", "./var/")
-STATIC_DIR: str = os.environ.get("STATIC_DIR", WORKING_DIR + "static")
+STATIC_DIR: str = os.environ.get("STATIC_DIR", WORKING_DIR + "static/")
 
 
 class Election:
@@ -42,6 +42,74 @@ def timeit(func: Callable) -> Callable:
         print(f"{func.__name__} took {_tic - _toc:.4f} seconds")
         return _result
     return timeit_wrapper
+
+
+def generate_tally_contest(results: pl.DataFrame, candidates: pl.DataFrame, contest_code: int, number_votes: int) -> None:
+    """
+    Generates tallies for a specific contest and saves the results in a CSV file.
+
+    Parameters:
+        results (pl.DataFrame): DataFrame containing election results.
+        candidates (pd.DataFrame): DataFrame containing candidate information.
+        contest_code (int): Code representing the election contest.
+
+    Returns:
+        None
+    """
+    _tally = results.with_columns(
+        PERCENTAGE = 100 * results["VOTES_AMOUNT"] / number_votes
+    )
+    _tally = _tally.join(candidates, on="CANDIDATE_CODE").sort(by="VOTES_AMOUNT", descending=True)
+    _tally[["CANDIDATE_NAME", "VOTES_AMOUNT", "PERCENTAGE"]].write_csv(
+        f"{STATIC_DIR}{contest_code}.csv",
+        separator=","
+    )
+
+    return None
+
+@timeit
+def tally_local(Election: Election) -> None:
+    """
+    Generates local tallies for each contest and saves the results in CSV files.
+
+    Parameters:
+        Election (Election): Election class instance containing data.
+
+    Returns:
+        None
+    """
+    print("Generating local results for each contest...")
+    _contest_codes = Election.contests["CONTEST_CODE"].to_list()
+    _skip_contests = list(CONTESTS.values())
+    _batch_size = NUMBER_OF_WORKERS
+
+    # Filter out national contests, group by contest code and add the votes.
+    _local_results = (
+        Election.results[["CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
+        .filter(~pl.col("CONTEST_CODE").is_in(_skip_contests))
+        .group_by(["CONTEST_CODE", "CANDIDATE_CODE"])
+        .agg(pl.col("VOTES_AMOUNT").sum())
+    )
+
+    # loop thru contest code
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
+        _futures = []
+        for _index in tqdm(range(0, len(_contest_codes), _batch_size), disable=PROGRESS_BAR_TOGGLE):
+            _batch = _contest_codes[_index : _index + _batch_size]
+            for _contest_code in _batch:
+                _local_tally = _local_results.filter(
+                    pl.col("CONTEST_CODE") == _contest_code
+                )
+                _number_votes = _local_tally["VOTES_AMOUNT"].sum()
+                _futures.append(
+                    _exec.submit(
+                        generate_tally_contest,
+                        _local_tally, Election.candidates, _contest_code, _number_votes
+                    )
+                )
+    concurrent.futures.wait(_futures)
+    
+    return None
 
 
 @timeit
