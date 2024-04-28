@@ -44,6 +44,80 @@ def timeit(func: Callable) -> Callable:
     return timeit_wrapper
 
 
+def generate_tally_province_contest(results: pl.DataFrame, candidates: pl.DataFrame, contest_code: int, number_voters_prv: pl.DataFrame) -> None:
+    """
+    Generates tallies for a specific contest in each province and saves the results in CSV files.
+
+    Parameters:
+        results (pd.DataFrame): DataFrame containing election results.
+        candidates (pd.DataFrame): DataFrame containing candidate information.
+        contest_code (int): Code representing the election contest.
+        ph (dict): Dictionary mapping regions to provinces.
+
+    Returns:
+        None
+    """
+    _prv_names = number_voters_prv.to_dicts()
+    _prv_names = {_prv_name["PRV_NAME"]:_prv_name["NUMBER_VOTERS"] for _prv_name in _prv_names}
+
+    for _prv_name, _number_voters in _prv_names.items():
+        _prv_tally = results.filter(pl.col("PRV_NAME") == _prv_name)
+        _prv_tally = _prv_tally.with_columns(
+            PERCENTAGE = 100 * _prv_tally["VOTES_AMOUNT"] / _number_voters
+        )
+        _prv_tally = _prv_tally.join(candidates, on="CANDIDATE_CODE").sort(by="VOTES_AMOUNT", descending=True)
+        _prv = _prv_name.replace(" ", "_")
+        _prv_tally[["CANDIDATE_NAME", "VOTES_AMOUNT", "PERCENTAGE"]].write_csv(
+            f"{STATIC_DIR}{_prv}_{contest_code}.csv",
+            separator=","
+        )
+
+    return None
+
+
+@timeit
+def tally_national_province(Election: Election) -> None:
+    """
+    Generates results for national contests in each province and saves the results in CSV files.
+
+    Parameters:
+        Election (Election): Election class instance containing data.
+
+    Returns:
+        None
+    """
+    print("Generating results for national contests in each province...")
+    _number_voters_prv = (
+        Election.results.unique(subset="PRECINCT_CODE")
+        .group_by("PRV_NAME").agg(pl.col("NUMBER_VOTERS").sum())
+    )
+
+    # Filter ond compute nly national contests
+    _contest_codes = list(CONTESTS.values())
+    _national_results = (
+        Election.results[["PRV_NAME", "CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
+        .filter(pl.col("CONTEST_CODE").is_in(_contest_codes))
+    )
+    _national_results = (
+        _national_results.group_by(["CONTEST_CODE", "PRV_NAME", "CANDIDATE_CODE"])
+        .agg(pl.col("VOTES_AMOUNT").sum())
+    )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
+        _futures = []
+        for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+            _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
+            _futures.append(
+                _exec.submit(
+                    generate_tally_province_contest,
+                    _national_tally, Election.candidates, _contest_code, _number_voters_prv
+                )
+            )
+        concurrent.futures.wait(_futures)
+
+    return None
+
+
 def generate_leading_candidate(results: pl.DataFrame, candidates: pl.DataFrame, contest_code: int) -> None:
     """
     Generates leading candidates per province and saves the results in a CSV file.
@@ -164,7 +238,7 @@ def tally_national(Election: Election) -> None:
                     _national_tally, Election.candidates, _contest_code, _number_voters
                 )
             )
-    concurrent.futures.wait(_futures)
+        concurrent.futures.wait(_futures)
 
     return None
 
@@ -184,6 +258,7 @@ def tally_local(Election: Election) -> None:
     _contest_codes = Election.contests["CONTEST_CODE"].to_list()
     _skip_contests = list(CONTESTS.values())
     _batch_size = NUMBER_OF_WORKERS
+    print(f"Number of workers: {_batch_size}")
 
     # Filter out national contests, group by contest code and add the votes.
     _local_results = (
@@ -209,7 +284,7 @@ def tally_local(Election: Election) -> None:
                         _local_tally, Election.candidates, _contest_code, _number_votes
                     )
                 )
-    concurrent.futures.wait(_futures)
+        concurrent.futures.wait(_futures)
     
     return None
 
