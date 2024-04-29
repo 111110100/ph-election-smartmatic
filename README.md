@@ -5,11 +5,15 @@ Script to process election data sent by Smartmatic machines. The original was wr
 - Polars
 - TQDM
 ## Command line interface
-### Compute local contests (e.g. )
+### Run all commands below (generate everything)
+```shell
+python batch_generate.py all
+```
+### Compute local contests (e.g. Governor, Vice-Governor, etc)
 ```shell
 python batch_generate.py tally-local
 ```
-### Compute national contests
+### Compute national contests (e.g. President, VP, Senator, Party List)
 ```shell
 python batch_generate.py tally-national
 ```
