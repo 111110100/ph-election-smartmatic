@@ -44,6 +44,65 @@ def timeit(func: Callable) -> Callable:
     return timeit_wrapper
 
 
+@timeit
+def stats(Election: Election) -> None:
+    """
+    Generates local tallies for each contest and saves the results in CSV files.
+
+    Parameters:
+        Election (Election): Election class instance containing data.
+
+    Returns:
+        None
+    """
+    print("Generating stats...")
+    _transmission_status = (
+        Election.precincts.collect()[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
+    )
+    _transmission_status = _transmission_status.with_columns(
+        TRANSMITTED = _transmission_status["CLUSTERED_PREC"].is_in(Election.results["PRECINCT_CODE"])
+    )
+    _total_clustered_precincts = (
+        _transmission_status.group_by("PRV_NAME").len().to_dicts()
+    )
+    _total_clustered_precincts = {_tmp["PRV_NAME"]:_tmp["len"] for _tmp in _total_clustered_precincts}
+    _vcm_transmitted = (
+        _transmission_status.filter(pl.col("TRANSMITTED")).group_by("PRV_NAME").len().to_dicts()
+    )
+    _vcm_transmitted = {_tmp["PRV_NAME"]: _tmp["len"] for _tmp in _vcm_transmitted}
+    _vcm_not_transmitted = (
+        _transmission_status.filter(pl.col("TRANSMITTED") == False).group_by("PRV_NAME").len().to_dicts()
+    )
+    _vcm_transmitted = {_tmp["PRV_NAME"]: _tmp["len"] for _tmp in _vcm_not_transmitted}
+    _number_of_voters_not_transmitted = (
+        _transmission_status.filter(pl.col("TRANSMITTED") == False).group_by("PRV_NAME").agg(pl.col("REGISTERED_VOTERS").sum()).to_dicts()
+    )
+    _number_of_voters_not_transmitted = {_tmp["PRV_NAME"]: _tmp["REGISTERED_VOTERS"] for _tmp in _number_of_voters_not_transmitted}
+    _results_subset = (
+        Election.results[["PRECINCT_CODE", "PRV_NAME", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]].unique(subset="PRECINCT_CODE")
+    )
+    _total_undervotes_per_province = (
+        _results_subset.group_by("PRV_NAME").agg(pl.col("UNDERVOTE").sum()).to_dicts()
+    )
+    _total_undervotes_per_province = {_tmp["PRV_NAME"]: _tmp["UNDERVOTE"] for _tmp in _total_undervotes_per_province}
+    _total_overvotes_per_province = (
+        _results_subset.group_by("PRV_NAME").agg(pl.col("OVERVOTE").sum()).to_dicts()
+    )
+    _total_overvotes_per_province = {_tmp["PRV_NAME"]: _tmp["OVERVOTE"] for _tmp in _total_overvotes_per_province}
+    _total_voted_per_province = (
+        _results_subset.group_by("PRV_NAME").agg(pl.col("NUMBER_VOTERS").sum()).to_dicts()
+    )
+    _total_voted_per_province = {_tmp["PRV_NAME"]: _tmp["NUMBER_VOTERS"] for _tmp in _total_voted_per_province}
+    _total_registered_voters_per_province = (
+        _results_subset.group_by("PRV_NAME").agg(pl.col("REGISTERED_VOTERS").sum()).to_dicts()
+    )
+    _total_registered_voters_per_province = {_tmp["PRV_NAME"]: _tmp["REGISTERED_VOTERS"] for _tmp in _total_registered_voters_per_province}
+
+    # TODO: Prep dictionary map_stats and voter_stats file
+    
+    return None
+
+
 def generate_tally_province_contest(results: pl.DataFrame, candidates: pl.DataFrame, contest_code: int, number_voters_prv: pl.DataFrame) -> None:
     """
     Generates tallies for a specific contest in each province and saves the results in CSV files.
@@ -103,6 +162,7 @@ def tally_national_province(Election: Election) -> None:
         .agg(pl.col("VOTES_AMOUNT").sum())
     )
 
+    # Loop thru contest codes and tally results
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
         _futures = []
         for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
@@ -166,6 +226,7 @@ def leading_candidate_province(Election: Election) -> None:
         .filter(pl.col("CONTEST_CODE").is_in(_contest_codes))
     )
 
+    # Loop thru contest codes and tally results
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
         _futures = []
         for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
@@ -226,6 +287,7 @@ def tally_national(Election: Election) -> None:
     )
     _number_voters = Election.results.unique("PRECINCT_CODE")["NUMBER_VOTERS"].sum()
 
+    # Loop thru contest codes and tally results
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
         _futures = []
         for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
@@ -268,7 +330,7 @@ def tally_local(Election: Election) -> None:
         .agg(pl.col("VOTES_AMOUNT").sum())
     )
 
-    # loop thru contest code
+    # Loop thru contest codes and tally results
     with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
         _futures = []
         for _index in tqdm(range(0, len(_contest_codes), _batch_size), disable=PROGRESS_BAR_TOGGLE):
