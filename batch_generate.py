@@ -7,6 +7,7 @@ import polars as pl
 import concurrent.futures
 import typer
 import time
+import json
 import os
 
 
@@ -56,6 +57,8 @@ def stats(Election: Election) -> None:
         None
     """
     print("Generating stats...")
+
+    _progress = tqdm(range(2), disable=PROGRESS_BAR_TOGGLE)
     _transmission_status = (
         Election.precincts.collect()[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
     )
@@ -73,33 +76,85 @@ def stats(Election: Election) -> None:
     _vcm_not_transmitted = (
         _transmission_status.filter(pl.col("TRANSMITTED") == False).group_by("PRV_NAME").len().to_dicts()
     )
-    _vcm_transmitted = {_tmp["PRV_NAME"]: _tmp["len"] for _tmp in _vcm_not_transmitted}
+    _vcm_not_transmitted = {_tmp["PRV_NAME"]: _tmp["len"] for _tmp in _vcm_not_transmitted}
     _number_of_voters_not_transmitted = (
-        _transmission_status.filter(pl.col("TRANSMITTED") == False).group_by("PRV_NAME").agg(pl.col("REGISTERED_VOTERS").sum()).to_dicts()
+        _transmission_status.filter(pl.col("TRANSMITTED") == False)
+        .group_by("PRV_NAME")
+        .agg(pl.col("REGISTERED_VOTERS").sum())
+        .to_dicts()
     )
     _number_of_voters_not_transmitted = {_tmp["PRV_NAME"]: _tmp["REGISTERED_VOTERS"] for _tmp in _number_of_voters_not_transmitted}
     _results_subset = (
-        Election.results[["PRECINCT_CODE", "PRV_NAME", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]].unique(subset="PRECINCT_CODE")
+        Election.results[["PRECINCT_CODE", "PRV_NAME", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]]
+        .unique(subset="PRECINCT_CODE")
     )
     _total_undervotes_per_province = (
-        _results_subset.group_by("PRV_NAME").agg(pl.col("UNDERVOTE").sum()).to_dicts()
+        _results_subset.group_by("PRV_NAME")
+        .agg(pl.col("UNDERVOTE").sum())
+        .to_dicts()
     )
     _total_undervotes_per_province = {_tmp["PRV_NAME"]: _tmp["UNDERVOTE"] for _tmp in _total_undervotes_per_province}
     _total_overvotes_per_province = (
-        _results_subset.group_by("PRV_NAME").agg(pl.col("OVERVOTE").sum()).to_dicts()
+        _results_subset.group_by("PRV_NAME")
+        .agg(pl.col("OVERVOTE").sum())
+        .to_dicts()
     )
     _total_overvotes_per_province = {_tmp["PRV_NAME"]: _tmp["OVERVOTE"] for _tmp in _total_overvotes_per_province}
     _total_voted_per_province = (
-        _results_subset.group_by("PRV_NAME").agg(pl.col("NUMBER_VOTERS").sum()).to_dicts()
+        _results_subset.group_by("PRV_NAME")
+        .agg(pl.col("NUMBER_VOTERS").sum())
+        .to_dicts()
     )
     _total_voted_per_province = {_tmp["PRV_NAME"]: _tmp["NUMBER_VOTERS"] for _tmp in _total_voted_per_province}
     _total_registered_voters_per_province = (
-        _results_subset.group_by("PRV_NAME").agg(pl.col("REGISTERED_VOTERS").sum()).to_dicts()
+        _transmission_status.group_by("PRV_NAME")
+        .agg(pl.col("REGISTERED_VOTERS").sum())
+        .to_dicts()
     )
     _total_registered_voters_per_province = {_tmp["PRV_NAME"]: _tmp["REGISTERED_VOTERS"] for _tmp in _total_registered_voters_per_province}
 
-    # TODO: Prep dictionary map_stats and voter_stats file
+    _provinces = _transmission_status.select("PRV_NAME").unique().to_dicts()
+    _provinces = [_tmp["PRV_NAME"] for _tmp in _provinces]
+    _map = {}
+    for _province in _provinces:
+        _map[_province] = {
+            "total_clustered_precincts": _total_clustered_precincts.get(_province, 0),
+            "vcm_transmitted": _vcm_transmitted.get(_province, 0),
+            "vcm_not_transmitted": _vcm_not_transmitted.get(_province, 0),
+            "vcm_transmitted_percentile": (
+                100 * _vcm_transmitted.get(_province, 0) / _vcm_not_transmitted.get(_province, 0)
+            ) if _vcm_not_transmitted.get(_province, 0) > 0 else 0,
+            "number_of_voters_not_transmitted": _number_of_voters_not_transmitted.get(_province, 0),
+            "total_overvotes": _total_overvotes_per_province.get(_province, 0),
+            "total_undervotes": _total_undervotes_per_province.get(_province, 0),
+            "total_voters": _total_voted_per_province.get(_province, 0),
+            "total_registered_voters": _total_registered_voters_per_province.get(_province, 0),
+            "voter_turnout": (
+                100 * _total_voted_per_province.get(_province, 0) / _total_registered_voters_per_province.get(_province, 0)
+            ) if _total_registered_voters_per_province.get(_province, 0) > 0 else 0,
+        }
     
+    with open(f"{STATIC_DIR}map_stats.json", "w") as _file:
+        _file.write(json.dumps(_map, sort_keys=True, indent=4, separators=(",", ":")))
+    _progress.update(1)
+    _progress.refresh()
+
+    _stats = {
+        "total_number_of_voters": _results_subset.unique(subset='PRECINCT_CODE').select('NUMBER_VOTERS').sum().to_dicts()[0]['NUMBER_VOTERS'],
+        "total_number_of_undervotes": _results_subset.unique(subset='PRECINCT_CODE').select('UNDERVOTE').sum().to_dicts()[0]['UNDERVOTE'],
+        "total_number_of_overvotes": _results_subset.unique(subset='PRECINCT_CODE').select('OVERVOTE').sum().to_dicts()[0]['OVERVOTE'],
+        "total_number_of_registered_voters": _results_subset.unique(subset='PRECINCT_CODE').select('REGISTERED_VOTERS').sum().to_dicts()[0]['REGISTERED_VOTERS'],
+        "total_number_of_precincts": _transmission_status['CLUSTERED_PREC'].n_unique(),
+        "total_number_of_reporting_precincts": _results_subset.unique(subset='PRECINCT_CODE').n_unique()
+    }
+
+    with open(f"{STATIC_DIR}voter_stats.json", "w") as _file:
+        _file.write(json.dumps(_stats, sort_keys=True, indent=4, separators=(",", ":")))
+    _progress.update(1)
+    _progress.refresh()
+    _progress.set_description("")
+    _progress.close()
+
     return None
 
 
