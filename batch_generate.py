@@ -58,7 +58,9 @@ def stats(Election: Election) -> None:
     """
     print("Generating stats...")
 
-    _progress = tqdm(range(2), disable=PROGRESS_BAR_TOGGLE)
+    _progress = tqdm(range(3), disable=PROGRESS_BAR_TOGGLE)
+    _progress.update(1)
+    _progress.refresh()
     _transmission_status = (
         Election.precincts.collect()[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
     )
@@ -136,8 +138,6 @@ def stats(Election: Election) -> None:
     
     with open(f"{STATIC_DIR}map_stats.json", "w") as _file:
         _file.write(json.dumps(_map, sort_keys=True, indent=4, separators=(",", ":")))
-    _progress.update(1)
-    _progress.refresh()
 
     _stats = {
         "total_number_of_voters": _results_subset.unique(subset='PRECINCT_CODE').select('NUMBER_VOTERS').sum().to_dicts()[0]['NUMBER_VOTERS'],
@@ -150,6 +150,26 @@ def stats(Election: Election) -> None:
 
     with open(f"{STATIC_DIR}voter_stats.json", "w") as _file:
         _file.write(json.dumps(_stats, sort_keys=True, indent=4, separators=(",", ":")))
+    _progress.update(1)
+    _progress.refresh()
+
+    # Cummulitative sum of VCMs over time
+    _vcm_received = (
+        Election.results.select(["RECEPTION_DATE", "PRECINCT_CODE"])
+        .group_by("RECEPTION_DATE")
+        .len()
+        .sort(by="RECEPTION_DATE")
+    )
+    _vcm_received = (
+        _vcm_received.select(
+            pl.col("RECEPTION_DATE"),
+            pl.cum_sum("len").alias("VCM_RECEIVED")
+        )
+    )
+    _vcm_received.write_csv(
+        f"{STATIC_DIR}vcm_received.csv",
+        separator=","
+    )
     _progress.update(1)
     _progress.refresh()
     _progress.set_description("")
