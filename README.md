@@ -55,17 +55,19 @@ The files generated are in CSV format except for a few. It's usually:
 |JOSE RIZAL (IND)|9|100.0|
 ### map_stats.json
 ```json
-PROVINCE_NAME: {
-    "number_of_voters_not_transmitted":xxx,
-    "total_clustered_precincts":xxx,
-    "total_overvotes":xxxx,
-    "total_registered_voters":xxxxxx,
-    "total_undervotes":xxxxxx,
-    "total_voters":xxxxxx,
-    "vcm_not_transmitted":x,
-    "vcm_transmitted":xxx,
-    "vcm_transmitted_percentile":xxxxx.0,
-    "voter_turnout":xx.xxxxxxxxxxxxxx
+{
+    PROVINCE_NAME: {
+        "number_of_voters_not_transmitted":xxx,
+        "total_clustered_precincts":xxx,
+        "total_overvotes":xxxx,
+        "total_registered_voters":xxxxxx,
+        "total_undervotes":xxxxxx,
+        "total_voters":xxxxxx,
+        "vcm_not_transmitted":x,
+        "vcm_transmitted":xxx,
+        "vcm_transmitted_percentile":xxxxx.0,
+        "voter_turnout":xx.xxxxxxxxxxxxxx
+    }
 }
 ```
 ### voter_stats.json
