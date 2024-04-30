@@ -33,8 +33,62 @@ python batch_generate.py stats
 ```shell
 python -i batch_generate.py read_results
 ```
-## Files and fields
-The files are in CSV format, separated by the **pipe** character **"|"**.
+## Files and fields generated
+The files generated are in CSV format except for a few. It's usually:
+- ***contest_code**.csv*: for all contests
+- *map-**contest_code**.csv*: for leading condidate per province
+- ***province_name**_**contest_code**.csv*: for results per province
+- *map_stats.json*: contains VCM information from all provinces,
+- *voter_stats.json*: contains votes & precincts information
+- *vcm_received.csv*: contains cummulative VCM transmission over time
+### contest_code.csv format
+|CANDIDATE_NAME|VOTES_AMOUNT|PERCENTAGE|
+|-|-|-|
+|JOSE RIZAL (IND)|9|100.0|
+### map-contest_code.csv format
+|CANDIDATE_NAME|VOTES_AMOUNT|PERCENTAGE|
+|-|-|-|
+|JOSE RIZAL (IND)|9|100.0|
+### province_name.csv format
+|CANDIDATE_NAME|VOTES_AMOUNT|PERCENTAGE|
+|-|-|-|
+|JOSE RIZAL (IND)|9|100.0|
+### map_stats.json
+```json
+PROVINCE_NAME: {
+    "number_of_voters_not_transmitted":xxx,
+    "total_clustered_precincts":xxx,
+    "total_overvotes":xxxx,
+    "total_registered_voters":xxxxxx,
+    "total_undervotes":xxxxxx,
+    "total_voters":xxxxxx,
+    "vcm_not_transmitted":x,
+    "vcm_transmitted":xxx,
+    "vcm_transmitted_percentile":xxxxx.0,
+    "voter_turnout":xx.xxxxxxxxxxxxxx
+}
+```
+### voter_stats.json
+```json
+{
+    "total_number_of_overvotes":xxxxxx,
+    "total_number_of_precincts":xxxxxx,
+    "total_number_of_registered_voters":xxxxxxxx,
+    "total_number_of_reporting_precincts":xxxxxx,
+    "total_number_of_undervotes":xxxxxxxx,
+    "total_number_of_voters":xxxxxxxx
+}
+```
+### vcm_received.csv
+|RECEPTION_DATE|VCM_RECEIVED|
+|-|-|
+|05/09/2022 - 07:08:48 PM|xxx
+|05/09/2022 - 07:08:49 PM|xxxx
+|05/09/2022 - 07:08:51 PM|xxxxx
+|05/09/2022 - 07:08:52 PM|xxxxxx
+
+## Files and fields of Transparency Server
+The files coming from Transparency server are in CSV format, separated by the **pipe** character **"|"**.
 ### CANDIDATES.CSV
 |CONTEST_CODE|CANDIDATE_CODE|CANDIDATE_NAME|
 |-|-|-|
