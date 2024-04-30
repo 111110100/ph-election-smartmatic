@@ -57,28 +57,28 @@ The files generated are in CSV format except for a few. It's usually:
 ```json
 {
     "PROVINCE_NAME": {
-        "number_of_voters_not_transmitted":000,
-        "total_clustered_precincts":000,
-        "total_overvotes":0000,
-        "total_registered_voters":000000,
-        "total_undervotes":000000,
-        "total_voters":000000,
+        "number_of_voters_not_transmitted":0,
+        "total_clustered_precincts":0,
+        "total_overvotes":0,
+        "total_registered_voters":0,
+        "total_undervotes":0,
+        "total_voters":0,
         "vcm_not_transmitted":0,
-        "vcm_transmitted":000,
-        "vcm_transmitted_percentile":00000.0,
-        "voter_turnout":00.00000000000000
+        "vcm_transmitted":0,
+        "vcm_transmitted_percentile":1.0,
+        "voter_turnout":1.0
     }
 }
 ```
 ### voter_stats.json
 ```json
 {
-    "total_number_of_overvotes":000000,
-    "total_number_of_precincts":000000,
-    "total_number_of_registered_voters":00000000,
-    "total_number_of_reporting_precincts":000000,
-    "total_number_of_undervotes":00000000,
-    "total_number_of_voters":00000000
+    "total_number_of_overvotes":0,
+    "total_number_of_precincts":0,
+    "total_number_of_registered_voters":0,
+    "total_number_of_reporting_precincts":0,
+    "total_number_of_undervotes":0,
+    "total_number_of_voters":0
 }
 ```
 ### vcm_received.csv
@@ -90,7 +90,7 @@ The files generated are in CSV format except for a few. It's usually:
 |05/09/2022 - 07:08:52 PM|xxxxxx
 Information can be used to plot received VCMs over time:
 ![VCMs received over time](https://raw.githubusercontent.com/111110100/ph-election-smartmatic/main/vcms_received.png)
-## Files and fields of Transparency Server
+## Files and fields received from Transparency Server
 The files coming from Transparency server are in CSV format, separated by the **pipe** character **"|"**.
 ### CANDIDATES.CSV
 |CONTEST_CODE|CANDIDATE_CODE|CANDIDATE_NAME|
