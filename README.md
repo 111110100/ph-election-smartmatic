@@ -56,29 +56,29 @@ The files generated are in CSV format except for a few. It's usually:
 ### map_stats.json
 ```json
 {
-    PROVINCE_NAME: {
-        "number_of_voters_not_transmitted":xxx,
-        "total_clustered_precincts":xxx,
-        "total_overvotes":xxxx,
-        "total_registered_voters":xxxxxx,
-        "total_undervotes":xxxxxx,
-        "total_voters":xxxxxx,
-        "vcm_not_transmitted":x,
-        "vcm_transmitted":xxx,
-        "vcm_transmitted_percentile":xxxxx.0,
-        "voter_turnout":xx.xxxxxxxxxxxxxx
+    "PROVINCE_NAME": {
+        "number_of_voters_not_transmitted":000,
+        "total_clustered_precincts":000,
+        "total_overvotes":0000,
+        "total_registered_voters":000000,
+        "total_undervotes":000000,
+        "total_voters":000000,
+        "vcm_not_transmitted":0,
+        "vcm_transmitted":000,
+        "vcm_transmitted_percentile":00000.0,
+        "voter_turnout":00.00000000000000
     }
 }
 ```
 ### voter_stats.json
 ```json
 {
-    "total_number_of_overvotes":xxxxxx,
-    "total_number_of_precincts":xxxxxx,
-    "total_number_of_registered_voters":xxxxxxxx,
-    "total_number_of_reporting_precincts":xxxxxx,
-    "total_number_of_undervotes":xxxxxxxx,
-    "total_number_of_voters":xxxxxxxx
+    "total_number_of_overvotes":000000,
+    "total_number_of_precincts":000000,
+    "total_number_of_registered_voters":00000000,
+    "total_number_of_reporting_precincts":000000,
+    "total_number_of_undervotes":00000000,
+    "total_number_of_voters":00000000
 }
 ```
 ### vcm_received.csv
@@ -111,3 +111,4 @@ The files coming from Transparency server are in CSV format, separated by the **
 |PRECINCT_CODE|CONTEST_CODE|CANDIDATE_CODE|PARTY_CODE|VOTES_AMOUNT|TOTALIZATION_ORDER|NUMBER_VOTERS|UNDERVOTE|OVERVOTE|RECEPTION_DATE|
 |-|-|-|-|-|-|-|-|-|-|
 |00000000|00000000|0000000000|0000000000|0|0|000|000|00|05/09/2022 - 08:07:08 PM|
+## Benchmarks
