@@ -34,7 +34,7 @@ python batch_generate.py stats
 python -i batch_generate.py read_results
 ```
 ## Files and fields generated
-The files generated are in CSV format except for a few. It's usually:
+The files generated are in CSV format except for a few. These are:
 - ***contest_code**.csv*: for all contests
 - *map-**contest_code**.csv*: for leading condidate per province
 - ***province_name**_**contest_code**.csv*: for results per province
