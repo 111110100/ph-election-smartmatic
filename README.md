@@ -113,8 +113,10 @@ The files coming from Transparency server are in CSV format, separated by the **
 |-|-|-|-|-|-|-|-|-|-|
 |00000000|00000000|0000000000|0000000000|0|0|000|000|00|05/09/2022 - 08:07:08 PM|
 ## Benchmarks
-The tests were run on a base model MacBook Air M2
+The tests were run on a base model MacBook Air M2. Data based from 32 Million rows of election data.
 ### Pandas
 ![Pandas benchmark result](https://raw.githubusercontent.com/111110100/ph-election-smartmatic/main/pandas.png)
 ### Polars
 ![Polars benchmark result](https://raw.githubusercontent.com/111110100/ph-election-smartmatic/main/polars.png)
+## Shameless Plug
+[Visit my website](https://111110100.com)
