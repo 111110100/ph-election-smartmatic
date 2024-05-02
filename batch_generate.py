@@ -25,7 +25,7 @@ CONTESTS = {
 }
 
 
-PROGRESS_BAR_TOGGLE: bool = os.environ.get("PROGRESS_BAR", False)
+PROGRESS_BAR_TOGGLE: bool = (os.environ.get("PROGRESS_BAR", False) == 'True')
 NUMBER_OF_WORKERS: int = os.cpu_count() or 8
 WORKING_DIR: str = os.environ.get("WORKING_DIR", "./var/")
 STATIC_DIR: str = os.environ.get("STATIC_DIR", WORKING_DIR + "static/")
