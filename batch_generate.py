@@ -67,7 +67,7 @@ def stats(Election: Election) -> None:
     _progress.update(1)
     _progress.refresh()
     _transmission_status = (
-        Election.precincts.collect()[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
+        Election.precincts[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
     )
     _transmission_status = _transmission_status.with_columns(
         TRANSMITTED = _transmission_status["CLUSTERED_PREC"].is_in(Election.results["PRECINCT_CODE"])
@@ -95,30 +95,26 @@ def stats(Election: Election) -> None:
         Election.results[["PRECINCT_CODE", "PRV_NAME", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]]
         .unique(subset="PRECINCT_CODE")
     )
-    _total_undervotes_per_province = (
-        _results_subset.group_by("PRV_NAME")
-        .agg(pl.col("UNDERVOTE").sum())
+    _vcm_provinces = (
+        _results_subset
+        .group_by("PRV_NAME")
+        .agg(
+            pl.col("UNDERVOTE").sum(),
+            pl.col("OVERVOTE").sum(),
+            pl.col("NUMBER_VOTERS").sum(),
+            pl.col("REGISTERED_VOTERS").sum()
+        )
         .to_dicts()
     )
-    _total_undervotes_per_province = {_tmp["PRV_NAME"]: _tmp["UNDERVOTE"] for _tmp in _total_undervotes_per_province}
-    _total_overvotes_per_province = (
-        _results_subset.group_by("PRV_NAME")
-        .agg(pl.col("OVERVOTE").sum())
-        .to_dicts()
-    )
-    _total_overvotes_per_province = {_tmp["PRV_NAME"]: _tmp["OVERVOTE"] for _tmp in _total_overvotes_per_province}
-    _total_voted_per_province = (
-        _results_subset.group_by("PRV_NAME")
-        .agg(pl.col("NUMBER_VOTERS").sum())
-        .to_dicts()
-    )
-    _total_voted_per_province = {_tmp["PRV_NAME"]: _tmp["NUMBER_VOTERS"] for _tmp in _total_voted_per_province}
-    _total_registered_voters_per_province = (
-        _transmission_status.group_by("PRV_NAME")
-        .agg(pl.col("REGISTERED_VOTERS").sum())
-        .to_dicts()
-    )
-    _total_registered_voters_per_province = {_tmp["PRV_NAME"]: _tmp["REGISTERED_VOTERS"] for _tmp in _total_registered_voters_per_province}
+    _vcm_provinces = {
+        _tmp["PRV_NAME"]: {
+            "UNDERVOTE": _tmp["UNDERVOTE"],
+            "OVERVOTE": _tmp["OVERVOTE"],
+            "NUMBER_VOTERS": _tmp["NUMBER_VOTERS"],
+            "REGISTERED_VOTERS": _tmp["REGISTERED_VOTERS"]
+        }
+        for _tmp in _vcm_provinces
+    }
 
     _provinces = _transmission_status.select("PRV_NAME").unique().to_dicts()
     _provinces = [_tmp["PRV_NAME"] for _tmp in _provinces]
@@ -132,13 +128,13 @@ def stats(Election: Election) -> None:
                 100 * _vcm_transmitted.get(_province, 0) / _vcm_not_transmitted.get(_province, 0)
             ) if _vcm_not_transmitted.get(_province, 0) > 0 else 0,
             "number_of_voters_not_transmitted": _number_of_voters_not_transmitted.get(_province, 0),
-            "total_overvotes": _total_overvotes_per_province.get(_province, 0),
-            "total_undervotes": _total_undervotes_per_province.get(_province, 0),
-            "total_voters": _total_voted_per_province.get(_province, 0),
-            "total_registered_voters": _total_registered_voters_per_province.get(_province, 0),
+            "total_overvotes": _vcm_provinces[_province].get("OVERVOTE", 0),
+            "total_undervotes": _vcm_provinces[_province].get("UNDERVOTE", 0),
+            "total_voters": _vcm_provinces[_province].get("NUMBER_VOTERS", 0),
+            "total_registered_voters": _vcm_provinces[_province].get("REGISTERED_VOTERS", 0),
             "voter_turnout": (
-                100 * _total_voted_per_province.get(_province, 0) / _total_registered_voters_per_province.get(_province, 0)
-            ) if _total_registered_voters_per_province.get(_province, 0) > 0 else 0,
+                100 * _vcm_provinces[_province].get("NUMBER_VOTERS", 0) / _vcm_provinces[_province].get("REGISTERED_VOTERS", 0)
+            ) if _vcm_provinces[_province].get("REGISTERED_VOTERS", 0) > 0 else 0,
         }
     
     with open(f"{STATIC_DIR}map_stats.json", "w") as _file:
@@ -444,34 +440,34 @@ def read_results() -> Election:
     _election_results = Election()
     _progress = tqdm(range(6), disable=PROGRESS_BAR_TOGGLE)
     _progress.set_description("Candidates")
-    _election_results.candidates = pl.scan_csv(
+    _election_results.candidates = pl.read_csv(
         WORKING_DIR + "candidates.csv",
         separator="|",
         has_header=True
-    ).collect(streaming=True)
+    )
     _progress.update(1)
     _progress.refresh()
 
     _progress.set_description("Contests")
-    _election_results.contests = pl.scan_csv(
+    _election_results.contests = pl.read_csv(
         WORKING_DIR + "contests.csv",
         separator="|",
         has_header=True
-    ).select("CONTEST_CODE").collect(streaming=True)
+    ).select("CONTEST_CODE")
     _progress.update(1)
     _progress.refresh()
 
     _progress.set_description("Parties")
-    _election_results.parties = pl.scan_csv(
+    _election_results.parties = pl.read_csv(
         WORKING_DIR + "parties.csv",
         separator="|",
         has_header=True
-    ).collect(streaming=True)
+    )
     _progress.update(1)
     _progress.refresh()
 
     _progress.set_description("Precincts")
-    _election_results.precincts = pl.scan_csv(
+    _election_results.precincts = pl.read_csv(
         WORKING_DIR + "precincts.csv",
         separator="|",
         has_header=True
@@ -480,7 +476,7 @@ def read_results() -> Election:
     _progress.refresh()
 
     _progress.set_description("Results")
-    _election_results.results= pl.scan_csv(
+    _election_results.results= pl.read_csv(
         WORKING_DIR + "results.csv",
         separator="|",
         has_header=True
@@ -488,15 +484,7 @@ def read_results() -> Election:
     _progress.update(1)
     _progress.refresh()
 
-    # Convert str time
-    _election_results.results.with_columns(
-        pl.col("RECEPTION_DATE").str.to_datetime("%d/%m/%Y - %I:%M:%S %p")
-    )
-
     _progress.set_description("Merging")
-    # Somehow, this "fixes" a performance problem I have when I do:
-    #   filtered_results = results.filter(pl.col("CONTESNT_CODE") == contest_code)
-    # by doing collect() when merging
     _election_results.results = _election_results.results.join(
        _election_results.precincts.select(
            "REG_NAME",
@@ -507,7 +495,7 @@ def read_results() -> Election:
        how="left",
        left_on="PRECINCT_CODE",
        right_on="CLUSTERED_PREC"
-    ).collect(streaming=True)
+    )
     _progress.update(1)
     _progress.set_description("")
     _progress.close()
