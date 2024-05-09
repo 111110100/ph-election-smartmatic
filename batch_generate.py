@@ -140,11 +140,22 @@ def stats(Election: Election) -> None:
     with open(f"{STATIC_DIR}map_stats.json", "w") as _file:
         _file.write(json.dumps(_map, sort_keys=True, indent=4, separators=(",", ":")))
 
+    _stats_data = (
+        _results_subset.unique(subset="PRECINCT_CODE")
+        .select(
+            pl.sum("UNDERVOTE"),
+            pl.sum("OVERVOTE"),
+            pl.sum("NUMBER_VOTERS"),
+            pl.sum("REGISTERED_VOTERS")
+        )
+        .to_dicts()
+    )[0]
+
     _stats = {
-        "total_number_of_voters": _results_subset.unique(subset='PRECINCT_CODE').select('NUMBER_VOTERS').sum().to_dicts()[0]['NUMBER_VOTERS'],
-        "total_number_of_undervotes": _results_subset.unique(subset='PRECINCT_CODE').select('UNDERVOTE').sum().to_dicts()[0]['UNDERVOTE'],
-        "total_number_of_overvotes": _results_subset.unique(subset='PRECINCT_CODE').select('OVERVOTE').sum().to_dicts()[0]['OVERVOTE'],
-        "total_number_of_registered_voters": _results_subset.unique(subset='PRECINCT_CODE').select('REGISTERED_VOTERS').sum().to_dicts()[0]['REGISTERED_VOTERS'],
+        "total_number_of_voters": _stats_data['NUMBER_VOTERS'],
+        "total_number_of_undervotes": _stats_data['UNDERVOTE'],
+        "total_number_of_overvotes": _stats_data['OVERVOTE'],
+        "total_number_of_registered_voters": _stats_data['REGISTERED_VOTERS'],
         "total_number_of_precincts": _transmission_status['CLUSTERED_PREC'].n_unique(),
         "total_number_of_reporting_precincts": _results_subset.unique(subset='PRECINCT_CODE').n_unique()
     }
