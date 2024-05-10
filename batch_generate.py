@@ -8,6 +8,7 @@ __author__ = "Erwin J. Lomibao"
 from typing import List, Callable, Union, Any
 from tqdm import tqdm
 from functools import wraps
+from dotenv import load_dotenv
 import polars as pl
 import concurrent.futures
 import typer
@@ -25,10 +26,10 @@ CONTESTS = {
 }
 
 
-PROGRESS_BAR_TOGGLE: bool = (os.environ.get("PROGRESS_BAR", False) == 'True')
+PROGRESS_BAR_TOGGLE: bool = (os.getenv("PROGRESS_BAR", 'F')[0].upper() in ['Y', 'T', '1'])
 NUMBER_OF_WORKERS: int = os.cpu_count() or 8
-WORKING_DIR: str = os.environ.get("WORKING_DIR", "./var/")
-STATIC_DIR: str = os.environ.get("STATIC_DIR", WORKING_DIR + "static/")
+WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
+STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
 
 
 class Election:
@@ -407,7 +408,6 @@ def tally_local(Election: Election) -> None:
     _contest_codes = Election.contests["CONTEST_CODE"].to_list()
     _skip_contests = list(CONTESTS.values())
     _batch_size = NUMBER_OF_WORKERS
-    print(f"Number of workers: {_batch_size}")
 
     # Filter out national contests, group by contest code and add the votes.
     _local_results = (
@@ -552,6 +552,12 @@ def main(cmds: List[str]) -> Union[bool, None]:
 
     if "all" in cmds:
         cmds = commands_available
+
+    # Show default variables
+    print(f"Number of workers: {NUMBER_OF_WORKERS}")
+    print(f"Proggress bar toggle: {PROGRESS_BAR_TOGGLE}")
+    print(f"Working directory: {WORKING_DIR}")
+    print(f"Static directory: {STATIC_DIR}")
 
     Election_results = read_results()
     for cmd in cmds:
