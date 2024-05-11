@@ -530,7 +530,7 @@ def main(cmds: List[str]) -> Union[bool, None]:
     print(f"Static directory: {STATIC_DIR}")
 
     Election_results = read_results()
-    with concurrent.futures.ThreadPoolExecutor() as _exec:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
         if CONCURRENCY:
             _futures = []
         for cmd in cmds:
