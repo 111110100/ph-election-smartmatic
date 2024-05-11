@@ -33,6 +33,20 @@ python batch_generate.py stats
 ```shell
 python -i batch_generate.py read_results
 ```
+## Environment Variables
+Set these environment variables on the command line or inside a .env file
+```shell
+# Turn on/off for parallel processing. Default False.
+CONCURRENCY=True|T|1|False|F|0
+# Turn on/off for progress bar display. Default True.
+PROGRESS_BAR_TOGGLE=True|T|1|False|F|0
+# Number of workers if CONCURRENCY is turned on. Uses os.cpu_count() or default to 8.
+NUMBER_OF_WORKERS=8
+# This is where the CSV files from Smartmatic is located.
+WORKING_DIR=./var/
+# This is where the generated files will be saved. It's WORKING_DIR + STATIC_DIR.
+STATIC_DIR=static
+```
 ## Files and fields generated
 The files generated are in CSV format except for a few. These are:
 - ***contest_code**.csv*: for all contests
