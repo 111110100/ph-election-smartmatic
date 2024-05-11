@@ -26,7 +26,10 @@ CONTESTS = {
 }
 
 
-PROGRESS_BAR_TOGGLE: bool = (os.getenv("PROGRESS_BAR", 'F')[0].upper() in ['Y', 'T', '1'])
+# Environment variables
+load_dotenv()
+CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
+PROGRESS_BAR_TOGGLE: bool = (os.getenv("PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"])
 NUMBER_OF_WORKERS: int = os.cpu_count() or 8
 WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
 STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
@@ -251,17 +254,9 @@ def tally_national_province(Election: Election) -> None:
     )
 
     # Loop thru contest codes and tally results
-    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
-        _futures = []
-        for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
-            _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
-            _futures.append(
-                _exec.submit(
-                    generate_tally_province_contest,
-                    _national_tally, Election.candidates, _contest_code, _number_voters_prv
-                )
-            )
-        concurrent.futures.wait(_futures)
+    for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+        _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
+        generate_tally_province_contest(_national_tally, Election.candidates, _contest_code, _number_voters_prv)
 
     return None
 
@@ -315,17 +310,9 @@ def leading_candidate_province(Election: Election) -> None:
     )
 
     # Loop thru contest codes and tally results
-    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
-        _futures = []
-        for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
-            _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
-            _futures.append(
-                _exec.submit(
-                    generate_leading_candidate,
-                    _national_tally, Election.candidates, _contest_code
-                )
-            )
-        concurrent.futures.wait(_futures)
+    for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+        _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
+        generate_leading_candidate(_national_tally, Election.candidates, _contest_code)
 
     return None
 
@@ -376,19 +363,11 @@ def tally_national(Election: Election) -> None:
     _number_voters = Election.results.unique("PRECINCT_CODE")["NUMBER_VOTERS"].sum()
 
     # Loop thru contest codes and tally results
-    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
-        _futures = []
-        for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
-            _national_tally = _national_results.filter(
-                pl.col("CONTEST_CODE") == _contest_code
-            )
-            _futures.append(
-                _exec.submit(
-                    generate_tally_contest,
-                    _national_tally, Election.candidates, _contest_code, _number_voters
-                )
-            )
-        concurrent.futures.wait(_futures)
+    for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+        _national_tally = _national_results.filter(
+            pl.col("CONTEST_CODE") == _contest_code
+        )
+        generate_tally_contest(_national_tally, Election.candidates, _contest_code, _number_voters)
 
     return None
 
@@ -418,22 +397,12 @@ def tally_local(Election: Election) -> None:
     )
 
     # Loop thru contest codes and tally results
-    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
-        _futures = []
-        for _index in tqdm(range(0, len(_contest_codes), _batch_size), disable=PROGRESS_BAR_TOGGLE):
-            _batch = _contest_codes[_index : _index + _batch_size]
-            for _contest_code in _batch:
-                _local_tally = _local_results.filter(
-                    pl.col("CONTEST_CODE") == _contest_code
-                )
-                _number_votes = _local_tally["VOTES_AMOUNT"].sum()
-                _futures.append(
-                    _exec.submit(
-                        generate_tally_contest,
-                        _local_tally, Election.candidates, _contest_code, _number_votes
-                    )
-                )
-        concurrent.futures.wait(_futures)
+    for _contest_code in tqdm(range(0, len(_contest_codes), _batch_size), disable=PROGRESS_BAR_TOGGLE):
+        _local_tally = _local_results.filter(
+            pl.col("CONTEST_CODE") == _contest_code
+        )
+        _number_votes = _local_tally["VOTES_AMOUNT"].sum()
+        generate_tally_contest(_local_tally, Election.candidates, _contest_code, _number_votes)
     
     return None
 
@@ -554,16 +523,30 @@ def main(cmds: List[str]) -> Union[bool, None]:
         cmds = commands_available
 
     # Show default variables
+    print(f"Concurrency enabled: {CONCURRENCY}")
     print(f"Number of workers: {NUMBER_OF_WORKERS}")
     print(f"Proggress bar toggle: {PROGRESS_BAR_TOGGLE}")
     print(f"Working directory: {WORKING_DIR}")
     print(f"Static directory: {STATIC_DIR}")
 
     Election_results = read_results()
-    for cmd in cmds:
-        cmd = cmd.replace("-", "_")
-        if cmd not in ["all", "read_results"]:
-            globals()[cmd](Election_results)
+    with concurrent.futures.ThreadPoolExecutor() as _exec:
+        if CONCURRENCY:
+            _futures = []
+        for cmd in cmds:
+            cmd = cmd.replace("-", "_")
+            if cmd not in ["all", "read_results"]:
+                if CONCURRENCY:
+                    _futures.append(
+                        _exec.submit(
+                            globals()[cmd], Election_results
+                        )
+                    )
+                else:
+                    globals()[cmd](Election_results)
+
+        if CONCURRENCY:
+            concurrent.futures.wait(_futures)
 
     return None
     
