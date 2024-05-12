@@ -60,9 +60,9 @@ The files generated are in CSV format except for a few. These are:
 |-|-|-|
 |JOSE RIZAL (IND)|9|100.0|
 ### map-contest_code.csv format
-|CANDIDATE_NAME|VOTES_AMOUNT|PERCENTAGE|
+|PRV_NAME|CANDIDATE_NAME|VOTES_AMOUNT|
 |-|-|-|
-|JOSE RIZAL (IND)|9|100.0|
+|ABRA|JOSE RIZAL (IND)|9|
 ### province_name.csv format
 |CANDIDATE_NAME|VOTES_AMOUNT|PERCENTAGE|
 |-|-|-|
@@ -79,8 +79,8 @@ The files generated are in CSV format except for a few. These are:
         "total_voters":0,
         "vcm_not_transmitted":0,
         "vcm_transmitted":0,
-        "vcm_transmitted_percentile":1.0,
-        "voter_turnout":1.0
+        "vcm_transmitted_percentile":0.0,
+        "voter_turnout":0.0
     }
 }
 ```
