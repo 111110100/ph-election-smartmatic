@@ -30,7 +30,7 @@ CONTESTS = {
 load_dotenv()
 CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
 PROGRESS_BAR_TOGGLE: bool = (os.getenv("PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"])
-NUMBER_OF_WORKERS: int = os.cpu_count() or 8
+NUMBER_OF_WORKERS: int = os.getenv("NUMBER_OF_WORKERS", os.cpu_count())
 WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
 STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
 
