@@ -1,4 +1,4 @@
-# ph-election-smartmatic
+# Smartmatic, tally script for Philippine Elections
 Script to process election data sent by Smartmatic machines. The original was written using Pandas and is owned by Inquirer Interactive. This version will be using Polars. To get the sample data, you need to get in touch with the Comelec office or create your own dummy data. **Some parts still need still need to be refactored.** Some parts were written in a Pandas way and not taking advantage of LazyFrame.
 ## Requirements
 - Python 3
