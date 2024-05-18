@@ -417,7 +417,6 @@ def read_results() -> Election:
     """
     print("Reading CSV files...")
     _election_results = Election()
-    _election_results = Election()
     _progress = tqdm(range(6), disable=PROGRESS_BAR_TOGGLE)
     _progress.set_description("Candidates")
     _election_results.candidates = pl.read_csv(
