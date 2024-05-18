@@ -38,7 +38,7 @@ Set these environment variables on the command line or inside a .env file
 ```shell
 # Turn on/off for parallel processing. Default False.
 CONCURRENCY=True|T|1|False|F|0
-# Turn on/off for progress bar display. Default True.
+# Turn on/off for progress bar display. Default False.
 PROGRESS_BAR_TOGGLE=True|T|1|False|F|0
 # Number of workers if CONCURRENCY is turned on. Uses os.cpu_count() if not defined.
 NUMBER_OF_WORKERS=8
