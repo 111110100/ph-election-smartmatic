@@ -42,7 +42,7 @@ CONCURRENCY=True|T|1|False|F|0
 PROGRESS_BAR_TOGGLE=True|T|1|False|F|0
 # Number of workers if CONCURRENCY is turned on. Uses os.cpu_count() if not defined.
 NUMBER_OF_WORKERS=8
-# This is where the CSV files from Smartmatic is located.
+# This is where the CSV files from Smartmatic are located.
 WORKING_DIR=./var/
 # This is where the generated files will be saved. It's WORKING_DIR + STATIC_DIR.
 STATIC_DIR=static
