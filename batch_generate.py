@@ -140,7 +140,7 @@ def stats(Election: Election) -> None:
                 100 * _vcm_provinces[_province].get("NUMBER_VOTERS", 0) / _vcm_provinces[_province].get("REGISTERED_VOTERS", 0)
             ) if _vcm_provinces[_province].get("REGISTERED_VOTERS", 0) > 0 else 0,
         }
-    
+
     with open(f"{STATIC_DIR}map_stats.json", "w") as _file:
         _file.write(json.dumps(_map, sort_keys=True, indent=4, separators=(",", ":")))
 
@@ -403,7 +403,7 @@ def tally_local(Election: Election) -> None:
         )
         _number_votes = _local_tally["VOTES_AMOUNT"].sum()
         generate_tally_contest(_local_tally, Election.candidates, _contest_code, _number_votes)
-    
+
     return None
 
 
@@ -548,7 +548,7 @@ def main(cmds: List[str]) -> Union[bool, None]:
             concurrent.futures.wait(_futures)
 
     return None
-    
+
 
 if __name__ == "__main__":
     typer.run(main)
