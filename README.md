@@ -37,6 +37,7 @@ python -i batch_generate.py read_results
 Set these environment variables on the command line or inside a .env file
 ```shell
 # Turn on/off for parallel processing. Default False.
+# NOTE: I advise not to turn this on. It's actually faster when this is set to False
 CONCURRENCY=True|T|1|False|F|0
 # Turn on/off for progress bar display. Default False.
 PROGRESS_BAR_TOGGLE=True|T|1|False|F|0
@@ -133,4 +134,4 @@ The tests were run on a base model MacBook Air M2. Data based from 32 Million ro
 ### Polars
 ![Polars benchmark result](https://raw.githubusercontent.com/111110100/ph-election-smartmatic/main/polars.png)
 ## Shameless Plug
-[Visit my website](https://111110100.com)
+[Visit my website](https://erwinlomibao.com)
