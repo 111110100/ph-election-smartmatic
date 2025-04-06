@@ -36,20 +36,20 @@ STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
 
 
 class Election:
-    results = pl.DataFrame(),
-    candidates = pl.DataFrame(),
-    precincts = pl.DataFrame(),
-    contests = pl.DataFrame(),
-    parties = pl.DataFrame(),
+    results = pl.DataFrame()
+    candidates = pl.DataFrame()
+    precincts = pl.DataFrame()
+    contests = pl.DataFrame()
+    parties = pl.DataFrame()
 
 
 def timeit(func: Callable) -> Callable:
     @wraps(func)
     def timeit_wrapper(*args, **kwargs) -> Any:
-        _toc = time.perf_counter()
-        _result = func(*args, **kwargs)
         _tic = time.perf_counter()
-        print(f"{func.__name__} took {_tic - _toc:.4f} seconds")
+        _result = func(*args, **kwargs)
+        _toc = time.perf_counter()
+        print(f"{func.__name__} took {_toc - _tic:.4f} seconds")
         return _result
     return timeit_wrapper
 
@@ -67,7 +67,7 @@ def stats(Election: Election) -> None:
     """
     print("Generating stats...")
 
-    _progress = tqdm(range(3), disable=PROGRESS_BAR_TOGGLE)
+    _progress = tqdm(range(8), disable=PROGRESS_BAR_TOGGLE)
     _progress.update(1)
     _progress.refresh()
     _transmission_status = (
@@ -129,8 +129,8 @@ def stats(Election: Election) -> None:
             "vcm_transmitted": _vcm_transmitted.get(_province, 0),
             "vcm_not_transmitted": _vcm_not_transmitted.get(_province, 0),
             "vcm_transmitted_percentile": (
-                100 * _vcm_transmitted.get(_province, 0) / _vcm_not_transmitted.get(_province, 0)
-            ) if _vcm_not_transmitted.get(_province, 0) > 0 else 0,
+                100 * _vcm_transmitted.get(_province, 0) / _total_clustered_precincts.get(_province, 0)
+            ) if _total_clustered_precincts.get(_province, 0) > 0 else 0,
             "number_of_voters_not_transmitted": _number_of_voters_not_transmitted.get(_province, 0),
             "total_overvotes": _vcm_provinces[_province].get("OVERVOTE", 0),
             "total_undervotes": _vcm_provinces[_province].get("UNDERVOTE", 0),
@@ -186,6 +186,82 @@ def stats(Election: Election) -> None:
         f"{STATIC_DIR}vcm_received.csv",
         separator=","
     )
+    _progress.update(1)
+    _progress.refresh()
+
+    # Voter Turnout by Precinct
+    _turnout = Election.results.select(["PRECINCT_CODE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]).unique(subset="PRECINCT_CODE")
+    _turnout = _turnout.with_columns(
+        VOTER_TURNOUT = (pl.col("NUMBER_VOTERS") / pl.col("REGISTERED_VOTERS") * 100).fill_nan(0)
+    )
+    _turnout.write_csv(f"{STATIC_DIR}voter_turnout_by_precinct.csv", separator=",")
+    _progress.update(1)
+    _progress.refresh()
+
+    # Spoiled Ballot Analysis
+    _spoiled = Election.results.select(["PRV_NAME", "PRECINCT_CODE", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS"]).unique(subset="PRECINCT_CODE")
+    _spoiled = _spoiled.group_by(["PRV_NAME", "PRECINCT_CODE"]).agg(
+        pl.col("UNDERVOTE").sum(),
+        pl.col("OVERVOTE").sum(),
+        pl.col("NUMBER_VOTERS").sum()
+    )
+    _spoiled = _spoiled.with_columns(
+        TOTAL_SPOILED = pl.col("UNDERVOTE") + pl.col("OVERVOTE")
+    )
+    _spoiled = _spoiled.with_columns(
+        SPOILED_PERCENTAGE = (pl.col("TOTAL_SPOILED") / pl.col("NUMBER_VOTERS") * 100).fill_nan(0)
+    )
+    _spoiled.write_csv(f"{STATIC_DIR}spoiled_ballots_analysis.csv", separator=",")
+    _progress.update(1)
+    _progress.refresh()
+
+    # Candidate Performance by Region
+    # Use lazy evaluation for the entire pipeline for better memory usage and performance
+    (
+        Election.results.lazy()
+        .filter(pl.col("CONTEST_CODE").is_in(list(CONTESTS.values())))
+        .select(["PRECINCT_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"])
+        .join(
+            Election.precincts.lazy().select(["CLUSTERED_PREC", "REG_NAME"]),
+            left_on="PRECINCT_CODE",
+            right_on="CLUSTERED_PREC"
+        )
+        .join(
+            Election.candidates.lazy().select(["CANDIDATE_CODE", "CANDIDATE_NAME"]),
+            on="CANDIDATE_CODE"
+        )
+        .group_by(["REG_NAME", "CANDIDATE_CODE", "CANDIDATE_NAME"])
+        .agg(pl.col("VOTES_AMOUNT").sum())
+        .with_columns(
+            PERCENTAGE = (pl.col("VOTES_AMOUNT") / pl.col("VOTES_AMOUNT").sum().over("REG_NAME") * 100).fill_nan(0)
+        )
+        .collect()
+        .write_csv(f"{STATIC_DIR}candidate_performance_by_region.csv", separator=",")
+    )
+    _progress.update(1)
+    _progress.refresh()
+
+    # Correlation Between Voter Turnout and Spoiled Ballots
+    _correlation_data = _turnout.join(_spoiled, on="PRECINCT_CODE")
+    _correlation = _correlation_data.select(
+        pl.corr("VOTER_TURNOUT", "SPOILED_PERCENTAGE")
+    ).to_dicts()[0]["VOTER_TURNOUT"]
+    with open(f"{STATIC_DIR}turnout_spoiled_correlation.json", "w") as _file:
+        _file.write(json.dumps({"correlation": _correlation}, sort_keys=True, indent=4, separators=(",", ":")))
+    _progress.update(1)
+    _progress.refresh()
+
+    # Time-Based Analysis of VCM Reception
+    _vcm_reception_rate = Election.results.select(["RECEPTION_DATE", "PRECINCT_CODE"])
+    _vcm_reception_rate = _vcm_reception_rate.with_columns(
+        RECEPTION_DATE_ONLY = pl.col("RECEPTION_DATE").str.slice(0, 10),
+        RECEPTION_HOUR = pl.col("RECEPTION_DATE").str.slice(13, 2),
+        RECEPTION_MINUTE = pl.col("RECEPTION_DATE").str.slice(16, 2)
+    )
+    _vcm_reception_rate = _vcm_reception_rate.group_by(["RECEPTION_DATE_ONLY", "RECEPTION_HOUR", "RECEPTION_MINUTE"]).len().sort(by=["RECEPTION_DATE_ONLY", "RECEPTION_HOUR", "RECEPTION_MINUTE"])
+    _vcm_reception_rate = _vcm_reception_rate.rename({"len": "VCM_COUNT"})
+    _vcm_reception_rate.write_csv(f"{STATIC_DIR}vcm_reception_rate.csv", separator=",")
+
     _progress.update(1)
     _progress.refresh()
     _progress.set_description("")
@@ -396,13 +472,21 @@ def tally_local(Election: Election) -> None:
         .agg(pl.col("VOTES_AMOUNT").sum())
     )
 
-    # Loop thru contest codes and tally results
-    for _contest_code in tqdm(range(0, len(_contest_codes), _batch_size), disable=PROGRESS_BAR_TOGGLE):
-        _local_tally = _local_results.filter(
-            pl.col("CONTEST_CODE") == _contest_code
-        )
-        _number_votes = _local_tally["VOTES_AMOUNT"].sum()
-        generate_tally_contest(_local_tally, Election.candidates, _contest_code, _number_votes)
+    # Get unique contest codes from the filtered results
+    _unique_contest_codes = _local_results["CONTEST_CODE"].unique().to_list()
+
+    # Process in batches for better performance
+    for i in tqdm(range(0, len(_unique_contest_codes), _batch_size), disable=PROGRESS_BAR_TOGGLE):
+        # Get the batch of contest codes
+        _batch_contest_codes = _unique_contest_codes[i:i+_batch_size]
+
+        # Process each contest code in the batch
+        for _contest_code in _batch_contest_codes:
+            _local_tally = _local_results.filter(
+                pl.col("CONTEST_CODE") == _contest_code
+            )
+            _number_votes = _local_tally["VOTES_AMOUNT"].sum()
+            generate_tally_contest(_local_tally, Election.candidates, _contest_code, _number_votes)
 
     return None
 
@@ -411,6 +495,7 @@ def tally_local(Election: Election) -> None:
 def read_results() -> Election:
     """
     Reads CSV files, populates the Election class, and returns the Election class instance.
+    Uses lazy evaluation for better memory usage and performance.
 
     Returns:
         Election: Election class instance containing data.
@@ -418,62 +503,69 @@ def read_results() -> Election:
     print("Reading CSV files...")
     _election_results = Election()
     _progress = tqdm(range(6), disable=PROGRESS_BAR_TOGGLE)
+
+    # Use lazy reading for all CSV files to optimize memory usage
     _progress.set_description("Candidates")
-    _election_results.candidates = pl.read_csv(
+    _election_results.candidates = pl.scan_csv(
         WORKING_DIR + "candidates.csv",
         separator="|",
         has_header=True
-    )
+    ).collect()
     _progress.update(1)
     _progress.refresh()
 
     _progress.set_description("Contests")
-    _election_results.contests = pl.read_csv(
+    _election_results.contests = pl.scan_csv(
         WORKING_DIR + "contests.csv",
         separator="|",
         has_header=True
-    ).select("CONTEST_CODE")
+    ).select("CONTEST_CODE").collect()
     _progress.update(1)
     _progress.refresh()
 
     _progress.set_description("Parties")
-    _election_results.parties = pl.read_csv(
+    _election_results.parties = pl.scan_csv(
         WORKING_DIR + "parties.csv",
         separator="|",
         has_header=True
-    )
+    ).collect()
     _progress.update(1)
     _progress.refresh()
 
     _progress.set_description("Precincts")
-    _election_results.precincts = pl.read_csv(
+    _election_results.precincts = pl.scan_csv(
         WORKING_DIR + "precincts.csv",
         separator="|",
         has_header=True
-    ).select(["VCM_ID", "REG_NAME", "PRV_NAME", "CLUSTERED_PREC", "REGISTERED_VOTERS"])
+    ).select(["VCM_ID", "REG_NAME", "PRV_NAME", "CLUSTERED_PREC", "REGISTERED_VOTERS"]).collect()
     _progress.update(1)
     _progress.refresh()
 
     _progress.set_description("Results")
-    _election_results.results= pl.read_csv(
+    _election_results.results = pl.scan_csv(
         WORKING_DIR + "results.csv",
         separator="|",
         has_header=True
-    )
+    ).collect()
     _progress.update(1)
     _progress.refresh()
 
     _progress.set_description("Merging")
-    _election_results.results = _election_results.results.join(
-       _election_results.precincts.select(
-           "REG_NAME",
-           "PRV_NAME",
-           "CLUSTERED_PREC",
-           "REGISTERED_VOTERS",
-       ),
-       how="left",
-       left_on="PRECINCT_CODE",
-       right_on="CLUSTERED_PREC"
+    # Use lazy evaluation for the join operation
+    _election_results.results = (
+        _election_results.results.lazy()
+        .join(
+            _election_results.precincts.lazy().select(
+                "REG_NAME",
+                "PRV_NAME",
+                "CLUSTERED_PREC",
+                "REGISTERED_VOTERS",
+            ),
+            how="left",
+            left_on="PRECINCT_CODE",
+            right_on="CLUSTERED_PREC"
+        )
+        .collect()
     )
     _progress.update(1)
     _progress.set_description("")
@@ -511,41 +603,60 @@ def main(cmds: List[str]) -> Union[bool, None]:
         "all",
     )
 
+    # Validate commands
     for cmd in cmds:
         if cmd not in commands_available:
             print(f"Command {cmd} not available.\nAvailable commands:\n")
-            for cmd in commands_available:
-                print(cmd)
+            for available_cmd in commands_available:
+                print(available_cmd)
             return False
 
+    # Handle 'all' command
     if "all" in cmds:
-        cmds = commands_available
+        cmds = [cmd for cmd in commands_available if cmd != "all"]
 
     # Show default variables
     print(f"Concurrency enabled: {CONCURRENCY}")
     print(f"Number of workers: {NUMBER_OF_WORKERS}")
-    print(f"Proggress bar toggle: {PROGRESS_BAR_TOGGLE}")
+    print(f"Progress bar toggle: {PROGRESS_BAR_TOGGLE}")
     print(f"Working directory: {WORKING_DIR}")
     print(f"Static directory: {STATIC_DIR}")
 
+    # Always read results first
     Election_results = read_results()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as _exec:
-        if CONCURRENCY:
-            _futures = []
-        for cmd in cmds:
-            cmd = cmd.replace("-", "_")
-            if cmd not in ["all", "read_results"]:
-                if CONCURRENCY:
-                    _futures.append(
-                        _exec.submit(
-                            globals()[cmd], Election_results
-                        )
-                    )
-                else:
-                    globals()[cmd](Election_results)
 
-        if CONCURRENCY:
-            concurrent.futures.wait(_futures)
+    # Process commands
+    commands_to_run = []
+    for cmd in cmds:
+        if cmd != "read-results":  # Skip read-results as we already did it
+            cmd_func = cmd.replace("-", "_")
+            commands_to_run.append(cmd_func)
+
+    if CONCURRENCY and commands_to_run:
+        print(f"Running {len(commands_to_run)} commands with {NUMBER_OF_WORKERS} workers")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as executor:
+            # Map command names to functions and submit them to the executor
+            futures = {
+                executor.submit(globals()[cmd_func], Election_results): cmd_func
+                for cmd_func in commands_to_run
+            }
+
+            # Process results as they complete
+            for future in concurrent.futures.as_completed(futures):
+                cmd_name = futures[future]
+                try:
+                    future.result()  # This will raise any exceptions that occurred
+                    print(f"Command {cmd_name} completed successfully")
+                except Exception as e:
+                    print(f"Command {cmd_name} failed with error: {str(e)}")
+    else:
+        # Run commands sequentially
+        for cmd_func in commands_to_run:
+            try:
+                globals()[cmd_func](Election_results)
+                print(f"Command {cmd_func} completed successfully")
+            except Exception as e:
+                print(f"Command {cmd_func} failed with error: {str(e)}")
 
     return None
 
