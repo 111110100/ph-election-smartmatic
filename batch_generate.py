@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 __description__ = "Script to process the results of the PH elections in static form."
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __email__ = "elomibao@gmail.com"
 __author__ = "Erwin J. Lomibao"
 
