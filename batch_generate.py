@@ -58,7 +58,7 @@ def stats(Election: Election) -> None:
     """
     print("Generating stats...")
 
-    _progress = tqdm(range(8), disable=PROGRESS_BAR_TOGGLE)
+    _progress = tqdm(range(8), disable=NO_PROGRESS_BAR)
     _progress.update(1)
     _progress.refresh()
     _transmission_status = (
@@ -321,7 +321,7 @@ def tally_national_province(Election: Election) -> None:
     )
 
     # Loop thru contest codes and tally results
-    for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+    for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
         _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
         generate_tally_province_contest(_national_tally, Election.candidates, _contest_code, _number_voters_prv)
 
@@ -377,7 +377,7 @@ def leading_candidate_province(Election: Election) -> None:
     )
 
     # Loop thru contest codes and tally results
-    for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+    for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
         _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
         generate_leading_candidate(_national_tally, Election.candidates, _contest_code)
 
@@ -430,7 +430,7 @@ def tally_national(Election: Election) -> None:
     _number_voters = Election.results.unique("PRECINCT_CODE")["NUMBER_VOTERS"].sum()
 
     # Loop thru contest codes and tally results
-    for _contest_code in tqdm(_contest_codes, disable=PROGRESS_BAR_TOGGLE):
+    for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
         _national_tally = _national_results.filter(
             pl.col("CONTEST_CODE") == _contest_code
         )
@@ -467,7 +467,7 @@ def tally_local(Election: Election) -> None:
     _unique_contest_codes = _local_results["CONTEST_CODE"].unique().to_list()
 
     # Process in batches for better performance
-    for i in tqdm(range(0, len(_unique_contest_codes), _batch_size), disable=PROGRESS_BAR_TOGGLE):
+    for i in tqdm(range(0, len(_unique_contest_codes), _batch_size), disable=NO_PROGRESS_BAR):
         # Get the batch of contest codes
         _batch_contest_codes = _unique_contest_codes[i:i+_batch_size]
 
@@ -493,7 +493,7 @@ def read_results() -> Election:
     """
     print("Reading CSV files...")
     _election_results = Election()
-    _progress = tqdm(range(6), disable=PROGRESS_BAR_TOGGLE)
+    _progress = tqdm(range(6), disable=NO_PROGRESS_BAR)
 
     # Use lazy reading for all CSV files to optimize memory usage
     _progress.set_description("Candidates")
@@ -585,14 +585,6 @@ def main(cmds: List[str]) -> Union[bool, None]:
     all - runs all commands except load.
     """
 
-    # Environment variables
-    load_dotenv()
-    CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
-    PROGRESS_BAR_TOGGLE: bool = (os.getenv("PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"])
-    NUMBER_OF_WORKERS: int = os.getenv("NUMBER_OF_WORKERS", os.cpu_count())
-    WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
-    STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
-
     commands_available = (
         "tally-national",
         "tally-local",
@@ -618,7 +610,7 @@ def main(cmds: List[str]) -> Union[bool, None]:
     # Show default variables
     print(f"Concurrency enabled: {CONCURRENCY}")
     print(f"Number of workers: {NUMBER_OF_WORKERS}")
-    print(f"Progress bar toggle: {PROGRESS_BAR_TOGGLE}")
+    print(f"Disable Progress bar: {NO_PROGRESS_BAR}")
     print(f"Working directory: {WORKING_DIR}")
     print(f"Static directory: {STATIC_DIR}")
 
@@ -662,4 +654,12 @@ def main(cmds: List[str]) -> Union[bool, None]:
 
 
 if __name__ == "__main__":
+    # Environment variables
+    load_dotenv()
+    CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
+    NO_PROGRESS_BAR: bool = (os.getenv("NO_PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"])
+    NUMBER_OF_WORKERS: int = os.getenv("NUMBER_OF_WORKERS", os.cpu_count())
+    WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
+    STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
+
     typer.run(main)
