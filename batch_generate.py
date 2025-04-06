@@ -25,16 +25,7 @@ CONTESTS = {
     "PARTY_LIST": 1_199_000
 }
 
-
-# Environment variables
-load_dotenv()
-CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
-PROGRESS_BAR_TOGGLE: bool = (os.getenv("PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"])
-NUMBER_OF_WORKERS: int = os.getenv("NUMBER_OF_WORKERS", os.cpu_count())
-WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
-STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
-
-
+# Election object
 class Election:
     results = pl.DataFrame()
     candidates = pl.DataFrame()
@@ -593,6 +584,15 @@ def main(cmds: List[str]) -> Union[bool, None]:
 
     all - runs all commands except load.
     """
+
+    # Environment variables
+    load_dotenv()
+    CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
+    PROGRESS_BAR_TOGGLE: bool = (os.getenv("PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"])
+    NUMBER_OF_WORKERS: int = os.getenv("NUMBER_OF_WORKERS", os.cpu_count())
+    WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
+    STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
+
     commands_available = (
         "tally-national",
         "tally-local",
