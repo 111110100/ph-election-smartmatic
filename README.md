@@ -40,7 +40,7 @@ Set these environment variables on the command line or inside a .env file
 # NOTE: I advise not to turn this on. It's actually faster when this is set to False
 CONCURRENCY=True|T|1|False|F|0
 # Turn on/off for progress bar display. Default False.
-PROGRESS_BAR_TOGGLE=True|T|1|False|F|0
+NO_PROGRESS_BAR=True|T|1|False|F|0
 # Number of workers if CONCURRENCY is turned on. Uses os.cpu_count() if not defined.
 NUMBER_OF_WORKERS=8
 # This is where the CSV files from Smartmatic are located.
