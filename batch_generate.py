@@ -60,7 +60,9 @@ def stats(Election: Election) -> None:
 
     _progress = tqdm(range(8), disable=NO_PROGRESS_BAR)
     _progress.update(1)
-    _progress.refresh()
+
+    _results_unique = Election.results[["PRECINCT_CODE", "PRV_NAME", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]].unique(subset="PRECINCT_CODE")
+
     _transmission_status = (
         Election.precincts[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
     )
@@ -86,10 +88,7 @@ def stats(Election: Election) -> None:
         .to_dicts()
     )
     _number_of_voters_not_transmitted = {_tmp["PRV_NAME"]: _tmp["REGISTERED_VOTERS"] for _tmp in _number_of_voters_not_transmitted}
-    _results_subset = (
-        Election.results[["PRECINCT_CODE", "PRV_NAME", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]]
-        .unique(subset="PRECINCT_CODE")
-    )
+    _results_subset = _results_unique
     _vcm_provinces = (
         _results_subset
         .group_by("PRV_NAME")
@@ -136,7 +135,7 @@ def stats(Election: Election) -> None:
         _file.write(json.dumps(_map, sort_keys=True, indent=4, separators=(",", ":")))
 
     _stats_data = (
-        _results_subset.unique(subset="PRECINCT_CODE")
+        _results_unique
         .select(
             pl.sum("UNDERVOTE"),
             pl.sum("OVERVOTE"),
@@ -152,13 +151,12 @@ def stats(Election: Election) -> None:
         "total_number_of_overvotes": _stats_data['OVERVOTE'],
         "total_number_of_registered_voters": _stats_data['REGISTERED_VOTERS'],
         "total_number_of_precincts": _transmission_status['CLUSTERED_PREC'].n_unique(),
-        "total_number_of_reporting_precincts": _results_subset.unique(subset='PRECINCT_CODE').n_unique()
+        "total_number_of_reporting_precincts": _results_unique.n_unique()
     }
 
-    with open(f"{STATIC_DIR}voter_stats.json", "w") as _file:
+    with open(os.path.join(STATIC_DIR, "voter_stats.json"), "w") as _file:
         _file.write(json.dumps(_stats, sort_keys=True, indent=4, separators=(",", ":")))
     _progress.update(1)
-    _progress.refresh()
 
     # Cummulitative sum of VCMs over time
     _vcm_received = (
@@ -178,7 +176,6 @@ def stats(Election: Election) -> None:
         separator=","
     )
     _progress.update(1)
-    _progress.refresh()
 
     # Voter Turnout by Precinct
     _turnout = Election.results.select(["PRECINCT_CODE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]).unique(subset="PRECINCT_CODE")
@@ -187,7 +184,6 @@ def stats(Election: Election) -> None:
     )
     _turnout.write_csv(f"{STATIC_DIR}voter_turnout_by_precinct.csv", separator=",")
     _progress.update(1)
-    _progress.refresh()
 
     # Spoiled Ballot Analysis
     _spoiled = Election.results.select(["PRV_NAME", "PRECINCT_CODE", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS"]).unique(subset="PRECINCT_CODE")
@@ -204,7 +200,6 @@ def stats(Election: Election) -> None:
     )
     _spoiled.write_csv(f"{STATIC_DIR}spoiled_ballots_analysis.csv", separator=",")
     _progress.update(1)
-    _progress.refresh()
 
     # Candidate Performance by Region
     # Use lazy evaluation for the entire pipeline for better memory usage and performance
@@ -230,7 +225,6 @@ def stats(Election: Election) -> None:
         .write_csv(f"{STATIC_DIR}candidate_performance_by_region.csv", separator=",")
     )
     _progress.update(1)
-    _progress.refresh()
 
     # Correlation Between Voter Turnout and Spoiled Ballots
     _correlation_data = _turnout.join(_spoiled, on="PRECINCT_CODE")
@@ -240,7 +234,6 @@ def stats(Election: Election) -> None:
     with open(f"{STATIC_DIR}turnout_spoiled_correlation.json", "w") as _file:
         _file.write(json.dumps({"correlation": _correlation}, sort_keys=True, indent=4, separators=(",", ":")))
     _progress.update(1)
-    _progress.refresh()
 
     # Time-Based Analysis of VCM Reception
     _vcm_reception_rate = Election.results.select(["RECEPTION_DATE", "PRECINCT_CODE"])
@@ -254,7 +247,6 @@ def stats(Election: Election) -> None:
     _vcm_reception_rate.write_csv(f"{STATIC_DIR}vcm_reception_rate.csv", separator=",")
 
     _progress.update(1)
-    _progress.refresh()
     _progress.set_description("")
     _progress.close()
 
@@ -503,7 +495,6 @@ def read_results() -> Election:
         has_header=True
     ).collect()
     _progress.update(1)
-    _progress.refresh()
 
     _progress.set_description("Contests")
     _election_results.contests = pl.scan_csv(
@@ -512,7 +503,6 @@ def read_results() -> Election:
         has_header=True
     ).select("CONTEST_CODE").collect()
     _progress.update(1)
-    _progress.refresh()
 
     _progress.set_description("Parties")
     _election_results.parties = pl.scan_csv(
@@ -521,7 +511,6 @@ def read_results() -> Election:
         has_header=True
     ).collect()
     _progress.update(1)
-    _progress.refresh()
 
     _progress.set_description("Precincts")
     _election_results.precincts = pl.scan_csv(
@@ -530,7 +519,6 @@ def read_results() -> Election:
         has_header=True
     ).select(["VCM_ID", "REG_NAME", "PRV_NAME", "CLUSTERED_PREC", "REGISTERED_VOTERS"]).collect()
     _progress.update(1)
-    _progress.refresh()
 
     _progress.set_description("Results")
     _election_results.results = pl.scan_csv(
@@ -539,7 +527,6 @@ def read_results() -> Election:
         has_header=True
     ).collect()
     _progress.update(1)
-    _progress.refresh()
 
     _progress.set_description("Merging")
     # Use lazy evaluation for the join operation
@@ -653,13 +640,13 @@ def main(cmds: List[str]) -> Union[bool, None]:
     return None
 
 
-if __name__ == "__main__":
-    # Environment variables
-    load_dotenv()
-    CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
-    NO_PROGRESS_BAR: bool = (os.getenv("NO_PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"])
-    NUMBER_OF_WORKERS: int = os.getenv("NUMBER_OF_WORKERS", os.cpu_count())
-    WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
-    STATIC_DIR: str = os.getenv("STATIC_DIR", WORKING_DIR + "static/")
+# Environment variables
+load_dotenv()
+CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
+NO_PROGRESS_BAR: bool = os.getenv("NO_PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"]
+NUMBER_OF_WORKERS: int = int(os.getenv("NUMBER_OF_WORKERS", os.cpu_count()))
+WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
+STATIC_DIR: str = os.getenv("STATIC_DIR", os.path.join(WORKING_DIR, "static/"))
 
+if __name__ == "__main__":
     typer.run(main)
