@@ -419,7 +419,7 @@ def tally_national(Election: Election) -> None:
         .group_by(["CONTEST_CODE", "CANDIDATE_CODE"])
         .agg(pl.col("VOTES_AMOUNT").sum())
     )
-    _number_voters = Election.results.unique("PRECINCT_CODE")["NUMBER_VOTERS"].sum()
+    _number_voters = int(Election.results.unique("PRECINCT_CODE")["NUMBER_VOTERS"].sum())
 
     # Loop thru contest codes and tally results
     for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
@@ -468,7 +468,7 @@ def tally_local(Election: Election) -> None:
             _local_tally = _local_results.filter(
                 pl.col("CONTEST_CODE") == _contest_code
             )
-            _number_votes = _local_tally["VOTES_AMOUNT"].sum()
+            _number_votes = int(_local_tally["VOTES_AMOUNT"].sum())
             generate_tally_contest(_local_tally, Election.candidates, _contest_code, _number_votes)
 
     return None
@@ -644,7 +644,7 @@ def main(cmds: List[str]) -> Union[bool, None]:
 load_dotenv()
 CONCURRENCY: bool = os.getenv("CONCURRENCY", "F")[0].upper() in ["T", "Y", "1"]
 NO_PROGRESS_BAR: bool = os.getenv("NO_PROGRESS_BAR", "F")[0].upper() in ["T", "Y", "1"]
-NUMBER_OF_WORKERS: int = int(os.getenv("NUMBER_OF_WORKERS", os.cpu_count()))
+NUMBER_OF_WORKERS: int = int(os.getenv("NUMBER_OF_WORKERS", 4))
 WORKING_DIR: str = os.getenv("WORKING_DIR", "./var/")
 STATIC_DIR: str = os.getenv("STATIC_DIR", os.path.join(WORKING_DIR, "static/"))
 
