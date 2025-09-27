@@ -67,7 +67,7 @@ def stats(Election: Election) -> None:
         Election.precincts[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
     )
     _transmission_status = _transmission_status.with_columns(
-        TRANSMITTED = _transmission_status["CLUSTERED_PREC"].is_in(Election.results["PRECINCT_CODE"])
+        TRANSMITTED = _transmission_status["CLUSTERED_PREC"].is_in(Election.results["PRECINCT_CODE"].unique().implode())
     )
     _total_clustered_precincts = (
         _transmission_status.group_by("PRV_NAME").len().to_dicts()
