@@ -312,10 +312,13 @@ def tally_national_province(Election: Election) -> None:
         .agg(pl.col("VOTES_AMOUNT").sum())
     )
 
+    # Partition by contest code
+    _national_results_partitions = _national_results.partition_by("CONTEST_CODE", as_dict=True)
+
     # Loop thru contest codes and tally results
     for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
-        _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
-        generate_tally_province_contest(_national_tally, Election.candidates, _contest_code, _number_voters_prv)
+        if _contest_code in _national_results_partitions:
+            generate_tally_province_contest(_national_results_partitions[_contest_code], Election.candidates, _contest_code, _number_voters_prv)
 
     return None
 
@@ -368,10 +371,13 @@ def leading_candidate_province(Election: Election) -> None:
         .filter(pl.col("CONTEST_CODE").is_in(_contest_codes))
     )
 
+    # Partition by contest code
+    _national_results_partitions = _national_results.partition_by("CONTEST_CODE", as_dict=True)
+
     # Loop thru contest codes and tally results
     for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
-        _national_tally = _national_results.filter(pl.col("CONTEST_CODE") == _contest_code)
-        generate_leading_candidate(_national_tally, Election.candidates, _contest_code)
+        if _contest_code in _national_results_partitions:
+            generate_leading_candidate(_national_results_partitions[_contest_code], Election.candidates, _contest_code)
 
     return None
 
@@ -421,12 +427,13 @@ def tally_national(Election: Election) -> None:
     )
     _number_voters = int(Election.results.unique("PRECINCT_CODE")["NUMBER_VOTERS"].sum())
 
+    # Partition by contest code
+    _national_results_partitions = _national_results.partition_by("CONTEST_CODE", as_dict=True)
+
     # Loop thru contest codes and tally results
     for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
-        _national_tally = _national_results.filter(
-            pl.col("CONTEST_CODE") == _contest_code
-        )
-        generate_tally_contest(_national_tally, Election.candidates, _contest_code, _number_voters)
+        if _contest_code in _national_results_partitions:
+            generate_tally_contest(_national_results_partitions[_contest_code], Election.candidates, _contest_code, _number_voters)
 
     return None
 
@@ -455,21 +462,13 @@ def tally_local(Election: Election) -> None:
         .agg(pl.col("VOTES_AMOUNT").sum())
     )
 
-    # Get unique contest codes from the filtered results
-    _unique_contest_codes = _local_results["CONTEST_CODE"].unique().to_list()
+    # Partition by contest code
+    _local_results_partitions = _local_results.partition_by("CONTEST_CODE", as_dict=True)
 
-    # Process in batches for better performance
-    for i in tqdm(range(0, len(_unique_contest_codes), _batch_size), disable=NO_PROGRESS_BAR):
-        # Get the batch of contest codes
-        _batch_contest_codes = _unique_contest_codes[i:i+_batch_size]
-
-        # Process each contest code in the batch
-        for _contest_code in _batch_contest_codes:
-            _local_tally = _local_results.filter(
-                pl.col("CONTEST_CODE") == _contest_code
-            )
-            _number_votes = int(_local_tally["VOTES_AMOUNT"].sum())
-            generate_tally_contest(_local_tally, Election.candidates, _contest_code, _number_votes)
+    # Process each partition
+    for _contest_code, _local_tally in tqdm(_local_results_partitions.items(), disable=NO_PROGRESS_BAR):
+        _number_votes = int(_local_tally["VOTES_AMOUNT"].sum())
+        generate_tally_contest(_local_tally, Election.candidates, _contest_code, _number_votes)
 
     return None
 
