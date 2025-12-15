@@ -468,7 +468,7 @@ def tally_local(Election: Election) -> None:
     # Process each partition
     for _contest_code, _local_tally in tqdm(_local_results_partitions.items(), disable=NO_PROGRESS_BAR):
         _number_votes = int(_local_tally["VOTES_AMOUNT"].sum())
-        generate_tally_contest(_local_tally, Election.candidates, _contest_code, _number_votes)
+        generate_tally_contest(_local_tally, Election.candidates, _contest_code[0], _number_votes)
 
     return None
 
