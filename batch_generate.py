@@ -35,6 +35,15 @@ class Election:
 
 
 def timeit(func: Callable) -> Callable:
+    """
+    Decorator to measure the execution time of a function.
+
+    Args:
+        func (Callable): _description_
+
+    Returns:
+        Callable: _description_
+    """
     @wraps(func)
     def timeit_wrapper(*args, **kwargs) -> Any:
         _tic = time.perf_counter()
