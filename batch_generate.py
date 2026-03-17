@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 __description__ = "Script to process the results of the PH elections in static form."
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __email__ = "elomibao@gmail.com"
 __author__ = "Erwin J. Lomibao"
 
-from typing import List, Callable, Union, Any
+from typing import List, Callable, Any
 from tqdm import tqdm
 from functools import wraps
 from dotenv import load_dotenv
@@ -27,11 +27,18 @@ CONTESTS = {
 
 # Election object
 class Election:
-    results = pl.DataFrame()
-    candidates = pl.DataFrame()
-    precincts = pl.DataFrame()
-    contests = pl.DataFrame()
-    parties = pl.DataFrame()
+    results: pl.DataFrame
+    candidates: pl.DataFrame
+    precincts: pl.DataFrame
+    contests: pl.DataFrame
+    parties: pl.DataFrame
+
+    def __init__(self):
+        self.results = pl.DataFrame()
+        self.candidates = pl.DataFrame()
+        self.precincts = pl.DataFrame()
+        self.contests = pl.DataFrame()
+        self.parties = pl.DataFrame()
 
 
 def timeit(func: Callable) -> Callable:
@@ -39,13 +46,13 @@ def timeit(func: Callable) -> Callable:
     Decorator to measure the execution time of a function.
 
     Args:
-        func (Callable): _description_
+        func (Callable): Function to wrap
 
     Returns:
-        Callable: _description_
+        Callable: Wrapped function with timing
     """
     @wraps(func)
-    def timeit_wrapper(*args, **kwargs) -> Any:
+    def timeit_wrapper(*args: Any, **kwargs: Any) -> Any:
         _tic = time.perf_counter()
         _result = func(*args, **kwargs)
         _toc = time.perf_counter()
@@ -55,12 +62,12 @@ def timeit(func: Callable) -> Callable:
 
 
 @timeit
-def stats(Election: Election) -> None:
+def stats(election: Election) -> None:
     """
     Generates local tallies for each contest and saves the results in CSV files.
 
     Parameters:
-        Election (Election): Election class instance containing data.
+        election (Election): Election class instance containing data.
 
     Returns:
         None
@@ -70,168 +77,172 @@ def stats(Election: Election) -> None:
     _progress = tqdm(range(8), disable=NO_PROGRESS_BAR)
     _progress.update(1)
 
-    _results_unique = Election.results[["PRECINCT_CODE", "PRV_NAME", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]].unique(subset="PRECINCT_CODE")
+    # Get unique precinct results
+    _results_unique = election.results[
+        ["PRECINCT_CODE", "PRV_NAME", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]
+    ].unique(subset="PRECINCT_CODE", maintain_order=False)
 
+    # Transmission status - optimized with single pipeline
+    _transmitted_precincts = election.results.select("PRECINCT_CODE").unique()
     _transmission_status = (
-        Election.precincts[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
+        election.precincts[["CLUSTERED_PREC", "PRV_NAME", "REGISTERED_VOTERS"]]
+        .with_columns(
+            TRANSMITTED=pl.col("CLUSTERED_PREC").is_in(_transmitted_precincts["PRECINCT_CODE"].implode())
+        )
     )
-    _transmission_status = _transmission_status.with_columns(
-        TRANSMITTED = _transmission_status["CLUSTERED_PREC"].is_in(Election.results["PRECINCT_CODE"].unique().implode())
-    )
-    _total_clustered_precincts = (
-        _transmission_status.group_by("PRV_NAME").len().to_dicts()
-    )
-    _total_clustered_precincts = {_tmp["PRV_NAME"]:_tmp["len"] for _tmp in _total_clustered_precincts}
-    _vcm_transmitted = (
-        _transmission_status.filter(pl.col("TRANSMITTED")).group_by("PRV_NAME").len().to_dicts()
-    )
-    _vcm_transmitted = {_tmp["PRV_NAME"]: _tmp["len"] for _tmp in _vcm_transmitted}
-    _vcm_not_transmitted = (
-        _transmission_status.filter(pl.col("TRANSMITTED") == False).group_by("PRV_NAME").len().to_dicts()
-    )
-    _vcm_not_transmitted = {_tmp["PRV_NAME"]: _tmp["len"] for _tmp in _vcm_not_transmitted}
-    _number_of_voters_not_transmitted = (
-        _transmission_status.filter(pl.col("TRANSMITTED") == False)
-        .group_by("PRV_NAME")
-        .agg(pl.col("REGISTERED_VOTERS").sum())
-        .to_dicts()
-    )
-    _number_of_voters_not_transmitted = {_tmp["PRV_NAME"]: _tmp["REGISTERED_VOTERS"] for _tmp in _number_of_voters_not_transmitted}
-    _results_subset = _results_unique
-    _vcm_provinces = (
-        _results_subset
+
+    # Province-level transmission stats - all in one pipeline
+    _province_transmission = (
+        _transmission_status
         .group_by("PRV_NAME")
         .agg(
-            pl.col("UNDERVOTE").sum(),
-            pl.col("OVERVOTE").sum(),
-            pl.col("NUMBER_VOTERS").sum(),
-            pl.col("REGISTERED_VOTERS").sum()
+            pl.col("CLUSTERED_PREC").count().alias("total_clustered_precincts"),
+            pl.col("CLUSTERED_PREC").filter(pl.col("TRANSMITTED")).count().alias("vcm_transmitted"),
+            pl.col("CLUSTERED_PREC").filter(~pl.col("TRANSMITTED")).count().alias("vcm_not_transmitted"),
+            pl.col("REGISTERED_VOTERS").filter(~pl.col("TRANSMITTED")).sum().alias("number_of_voters_not_transmitted")
         )
-        .to_dicts()
+        .with_columns(
+            vcm_transmitted_percentile=pl.when(pl.col("total_clustered_precincts") > 0)
+            .then(100 * pl.col("vcm_transmitted") / pl.col("total_clustered_precincts"))
+            .otherwise(0)
+        )
     )
-    _vcm_provinces = {
-        _tmp["PRV_NAME"]: {
-            "UNDERVOTE": _tmp["UNDERVOTE"],
-            "OVERVOTE": _tmp["OVERVOTE"],
-            "NUMBER_VOTERS": _tmp["NUMBER_VOTERS"],
-            "REGISTERED_VOTERS": _tmp["REGISTERED_VOTERS"]
-        }
-        for _tmp in _vcm_provinces
-    }
 
-    _provinces = _transmission_status.select("PRV_NAME").unique().to_dicts()
-    _provinces = [_tmp["PRV_NAME"] for _tmp in _provinces]
-    _map = {}
-    for _province in _provinces:
-        _map[_province] = {
-            "total_clustered_precincts": _total_clustered_precincts.get(_province, 0),
-            "vcm_transmitted": _vcm_transmitted.get(_province, 0),
-            "vcm_not_transmitted": _vcm_not_transmitted.get(_province, 0),
-            "vcm_transmitted_percentile": (
-                100 * _vcm_transmitted.get(_province, 0) / _total_clustered_precincts.get(_province, 0)
-            ) if _total_clustered_precincts.get(_province, 0) > 0 else 0,
-            "number_of_voters_not_transmitted": _number_of_voters_not_transmitted.get(_province, 0),
-            "total_overvotes": _vcm_provinces[_province].get("OVERVOTE", 0),
-            "total_undervotes": _vcm_provinces[_province].get("UNDERVOTE", 0),
-            "total_voters": _vcm_provinces[_province].get("NUMBER_VOTERS", 0),
-            "total_registered_voters": _vcm_provinces[_province].get("REGISTERED_VOTERS", 0),
-            "voter_turnout": (
-                100 * _vcm_provinces[_province].get("NUMBER_VOTERS", 0) / _vcm_provinces[_province].get("REGISTERED_VOTERS", 0)
-            ) if _vcm_provinces[_province].get("REGISTERED_VOTERS", 0) > 0 else 0,
+    # Province-level voter stats
+    _province_voter_stats = (
+        _results_unique
+        .group_by("PRV_NAME")
+        .agg(
+            pl.col("UNDERVOTE").sum().alias("total_undervotes"),
+            pl.col("OVERVOTE").sum().alias("total_overvotes"),
+            pl.col("NUMBER_VOTERS").sum().alias("total_voters"),
+            pl.col("REGISTERED_VOTERS").sum().alias("total_registered_voters")
+        )
+        .with_columns(
+            voter_turnout=pl.when(pl.col("total_registered_voters") > 0)
+            .then(100 * pl.col("total_voters") / pl.col("total_registered_voters"))
+            .otherwise(0)
+        )
+    )
+
+    # Join transmission and voter stats, then convert to dict
+    _map_data = (
+        _province_transmission
+        .join(_province_voter_stats, on="PRV_NAME", how="full")
+        .fill_null(0)
+    )
+
+    _map = {
+        row["PRV_NAME"]: {
+            "total_clustered_precincts": int(row["total_clustered_precincts"]),
+            "vcm_transmitted": int(row["vcm_transmitted"]),
+            "vcm_not_transmitted": int(row["vcm_not_transmitted"]),
+            "vcm_transmitted_percentile": float(row["vcm_transmitted_percentile"]),
+            "number_of_voters_not_transmitted": int(row["number_of_voters_not_transmitted"]),
+            "total_overvotes": int(row["total_overvotes"]),
+            "total_undervotes": int(row["total_undervotes"]),
+            "total_voters": int(row["total_voters"]),
+            "total_registered_voters": int(row["total_registered_voters"]),
+            "voter_turnout": float(row["voter_turnout"]),
         }
+        for row in _map_data.to_dicts()
+    }
 
     with open(f"{STATIC_DIR}map_stats.json", "w") as _file:
         _file.write(json.dumps(_map, sort_keys=True, indent=4, separators=(",", ":")))
 
-    _stats_data = (
-        _results_unique
-        .select(
-            pl.sum("UNDERVOTE"),
-            pl.sum("OVERVOTE"),
-            pl.sum("NUMBER_VOTERS"),
-            pl.sum("REGISTERED_VOTERS")
-        )
-        .to_dicts()
-    )[0]
+    # Overall stats
+    _stats_data = _results_unique.select(
+        pl.col("UNDERVOTE").sum().alias("UNDERVOTE"),
+        pl.col("OVERVOTE").sum().alias("OVERVOTE"),
+        pl.col("NUMBER_VOTERS").sum().alias("NUMBER_VOTERS"),
+        pl.col("REGISTERED_VOTERS").sum().alias("REGISTERED_VOTERS")
+    ).to_dicts()[0]
 
     _stats = {
-        "total_number_of_voters": _stats_data['NUMBER_VOTERS'],
-        "total_number_of_undervotes": _stats_data['UNDERVOTE'],
-        "total_number_of_overvotes": _stats_data['OVERVOTE'],
-        "total_number_of_registered_voters": _stats_data['REGISTERED_VOTERS'],
-        "total_number_of_precincts": _transmission_status['CLUSTERED_PREC'].n_unique(),
-        "total_number_of_reporting_precincts": _results_unique.n_unique()
+        "total_number_of_voters": int(_stats_data['NUMBER_VOTERS']),
+        "total_number_of_undervotes": int(_stats_data['UNDERVOTE']),
+        "total_number_of_overvotes": int(_stats_data['OVERVOTE']),
+        "total_number_of_registered_voters": int(_stats_data['REGISTERED_VOTERS']),
+        "total_number_of_precincts": int(_transmission_status['CLUSTERED_PREC'].n_unique()),
+        "total_number_of_reporting_precincts": int(_results_unique.n_unique())
     }
 
     with open(os.path.join(STATIC_DIR, "voter_stats.json"), "w") as _file:
         _file.write(json.dumps(_stats, sort_keys=True, indent=4, separators=(",", ":")))
     _progress.update(1)
 
-    # Cummulitative sum of VCMs over time
+    # Cumulative sum of VCMs over time
     _vcm_received = (
-        Election.results.select(["RECEPTION_DATE", "PRECINCT_CODE"])
+        election.results
+        .select(["RECEPTION_DATE", "PRECINCT_CODE"])
         .group_by("RECEPTION_DATE")
-        .len()
+        .agg(pl.len().alias("VCM_COUNT"))
         .sort(by="RECEPTION_DATE")
-    )
-    _vcm_received = (
-        _vcm_received.select(
-            pl.col("RECEPTION_DATE"),
-            pl.cum_sum("len").alias("VCM_RECEIVED")
+        .with_columns(
+            pl.col("VCM_COUNT").cum_sum().alias("VCM_RECEIVED")
         )
+        .select("RECEPTION_DATE", "VCM_RECEIVED")
     )
     _vcm_received.write_csv(
         f"{STATIC_DIR}vcm_received.csv",
-        separator=","
+        separator=",",
+        include_header=True
     )
     _progress.update(1)
 
     # Voter Turnout by Precinct
-    _turnout = Election.results.select(["PRECINCT_CODE", "NUMBER_VOTERS", "REGISTERED_VOTERS"]).unique(subset="PRECINCT_CODE")
-    _turnout = _turnout.with_columns(
-        VOTER_TURNOUT = (pl.col("NUMBER_VOTERS") / pl.col("REGISTERED_VOTERS") * 100).fill_nan(0)
+    _turnout = (
+        election.results
+        .select(["PRECINCT_CODE", "NUMBER_VOTERS", "REGISTERED_VOTERS"])
+        .unique(subset="PRECINCT_CODE", maintain_order=False)
+        .with_columns(
+            VOTER_TURNOUT=(pl.col("NUMBER_VOTERS") / pl.col("REGISTERED_VOTERS") * 100).fill_nan(0)
+        )
     )
-    _turnout.write_csv(f"{STATIC_DIR}voter_turnout_by_precinct.csv", separator=",")
+    _turnout.write_csv(f"{STATIC_DIR}voter_turnout_by_precinct.csv", separator=",", include_header=True)
     _progress.update(1)
 
     # Spoiled Ballot Analysis
-    _spoiled = Election.results.select(["PRV_NAME", "PRECINCT_CODE", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS"]).unique(subset="PRECINCT_CODE")
-    _spoiled = _spoiled.group_by(["PRV_NAME", "PRECINCT_CODE"]).agg(
-        pl.col("UNDERVOTE").sum(),
-        pl.col("OVERVOTE").sum(),
-        pl.col("NUMBER_VOTERS").sum()
+    _spoiled = (
+        election.results
+        .select(["PRV_NAME", "PRECINCT_CODE", "UNDERVOTE", "OVERVOTE", "NUMBER_VOTERS"])
+        .unique(subset="PRECINCT_CODE", maintain_order=False)
+        .group_by(["PRV_NAME", "PRECINCT_CODE"])
+        .agg(
+            pl.col("UNDERVOTE").sum(),
+            pl.col("OVERVOTE").sum(),
+            pl.col("NUMBER_VOTERS").sum()
+        )
+        .with_columns(
+            TOTAL_SPOILED=pl.col("UNDERVOTE") + pl.col("OVERVOTE"),
+            SPOILED_PERCENTAGE=(pl.col("UNDERVOTE") + pl.col("OVERVOTE")) / pl.col("NUMBER_VOTERS") * 100
+        )
     )
-    _spoiled = _spoiled.with_columns(
-        TOTAL_SPOILED = pl.col("UNDERVOTE") + pl.col("OVERVOTE")
-    )
-    _spoiled = _spoiled.with_columns(
-        SPOILED_PERCENTAGE = (pl.col("TOTAL_SPOILED") / pl.col("NUMBER_VOTERS") * 100).fill_nan(0)
-    )
-    _spoiled.write_csv(f"{STATIC_DIR}spoiled_ballots_analysis.csv", separator=",")
+    _spoiled.write_csv(f"{STATIC_DIR}spoiled_ballots_analysis.csv", separator=",", include_header=True)
     _progress.update(1)
 
-    # Candidate Performance by Region
-    # Use lazy evaluation for the entire pipeline for better memory usage and performance
+    # Candidate Performance by Region - lazy evaluation
     (
-        Election.results.lazy()
+        election.results.lazy()
         .filter(pl.col("CONTEST_CODE").is_in(list(CONTESTS.values())))
         .select(["PRECINCT_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"])
         .join(
-            Election.precincts.lazy().select(["CLUSTERED_PREC", "REG_NAME"]),
+            election.precincts.lazy().select(["CLUSTERED_PREC", "REG_NAME"]),
             left_on="PRECINCT_CODE",
             right_on="CLUSTERED_PREC"
         )
         .join(
-            Election.candidates.lazy().select(["CANDIDATE_CODE", "CANDIDATE_NAME"]),
+            election.candidates.lazy().select(["CANDIDATE_CODE", "CANDIDATE_NAME"]),
             on="CANDIDATE_CODE"
         )
         .group_by(["REG_NAME", "CANDIDATE_CODE", "CANDIDATE_NAME"])
         .agg(pl.col("VOTES_AMOUNT").sum())
         .with_columns(
-            PERCENTAGE = (pl.col("VOTES_AMOUNT") / pl.col("VOTES_AMOUNT").sum().over("REG_NAME") * 100).fill_nan(0)
+            PERCENTAGE=(pl.col("VOTES_AMOUNT") / pl.col("VOTES_AMOUNT").sum().over("REG_NAME") * 100).fill_nan(0)
         )
         .collect()
-        .write_csv(f"{STATIC_DIR}candidate_performance_by_region.csv", separator=",")
+        .write_csv(f"{STATIC_DIR}candidate_performance_by_region.csv", separator=",", include_header=True)
     )
     _progress.update(1)
 
@@ -244,16 +255,20 @@ def stats(Election: Election) -> None:
         _file.write(json.dumps({"correlation": _correlation}, sort_keys=True, indent=4, separators=(",", ":")))
     _progress.update(1)
 
-    # Time-Based Analysis of VCM Reception
-    _vcm_reception_rate = Election.results.select(["RECEPTION_DATE", "PRECINCT_CODE"])
-    _vcm_reception_rate = _vcm_reception_rate.with_columns(
-        RECEPTION_DATE_ONLY = pl.col("RECEPTION_DATE").str.slice(0, 10),
-        RECEPTION_HOUR = pl.col("RECEPTION_DATE").str.slice(13, 2),
-        RECEPTION_MINUTE = pl.col("RECEPTION_DATE").str.slice(16, 2)
+    # Time-Based Analysis of VCM Reception - optimized string parsing
+    _vcm_reception_rate = (
+        election.results
+        .select(["RECEPTION_DATE", "PRECINCT_CODE"])
+        .with_columns(
+            RECEPTION_DATE_ONLY=pl.col("RECEPTION_DATE").str.slice(0, 10),
+            RECEPTION_HOUR=pl.col("RECEPTION_DATE").str.slice(11, 2),
+            RECEPTION_MINUTE=pl.col("RECEPTION_DATE").str.slice(14, 2)
+        )
+        .group_by(["RECEPTION_DATE_ONLY", "RECEPTION_HOUR", "RECEPTION_MINUTE"])
+        .agg(pl.len().alias("VCM_COUNT"))
+        .sort(by=["RECEPTION_DATE_ONLY", "RECEPTION_HOUR", "RECEPTION_MINUTE"])
     )
-    _vcm_reception_rate = _vcm_reception_rate.group_by(["RECEPTION_DATE_ONLY", "RECEPTION_HOUR", "RECEPTION_MINUTE"]).len().sort(by=["RECEPTION_DATE_ONLY", "RECEPTION_HOUR", "RECEPTION_MINUTE"])
-    _vcm_reception_rate = _vcm_reception_rate.rename({"len": "VCM_COUNT"})
-    _vcm_reception_rate.write_csv(f"{STATIC_DIR}vcm_reception_rate.csv", separator=",")
+    _vcm_reception_rate.write_csv(f"{STATIC_DIR}vcm_reception_rate.csv", separator=",", include_header=True)
 
     _progress.update(1)
     _progress.set_description("")
@@ -267,67 +282,76 @@ def generate_tally_province_contest(results: pl.DataFrame, candidates: pl.DataFr
     Generates tallies for a specific contest in each province and saves the results in CSV files.
 
     Parameters:
-        results (pd.DataFrame): DataFrame containing election results.
-        candidates (pd.DataFrame): DataFrame containing candidate information.
+        results (pl.DataFrame): DataFrame containing election results.
+        candidates (pl.DataFrame): DataFrame containing candidate information.
         contest_code (int): Code representing the election contest.
-        ph (dict): Dictionary mapping regions to provinces.
+        number_voters_prv (pl.DataFrame): DataFrame with number of voters per province.
 
     Returns:
         None
     """
-    _prv_names = number_voters_prv.to_dicts()
-    _prv_names = {_prv_name["PRV_NAME"]:_prv_name["NUMBER_VOTERS"] for _prv_name in _prv_names}
-
-    for _prv_name, _number_voters in _prv_names.items():
-        _prv_tally = results.filter(pl.col("PRV_NAME") == _prv_name)
-        _prv_tally = _prv_tally.with_columns(
-            PERCENTAGE = 100 * _prv_tally["VOTES_AMOUNT"] / _number_voters
+    # Join with number of voters and compute percentage in one pipeline
+    _tally = (
+        results
+        .join(number_voters_prv, on="PRV_NAME")
+        .with_columns(
+            PERCENTAGE=100 * pl.col("VOTES_AMOUNT") / pl.col("NUMBER_VOTERS")
         )
-        _prv_tally = _prv_tally.join(candidates, on="CANDIDATE_CODE").sort(by="VOTES_AMOUNT", descending=True)
-        _prv = _prv_name.replace(" ", "_")
+        .join(candidates, on="CANDIDATE_CODE")
+        .sort(["PRV_NAME", "VOTES_AMOUNT"], descending=[False, True])
+    )
+
+    # Write separate CSV for each province
+    for _prv_name, _prv_tally in _tally.partition_by("PRV_NAME", as_dict=True).items():
+        _prv = _prv_name[0].replace(" ", "_")  # Extract string from tuple key
         _prv_tally[["CANDIDATE_NAME", "VOTES_AMOUNT", "PERCENTAGE"]].write_csv(
             f"{STATIC_DIR}{_prv}_{contest_code}.csv",
-            separator=","
+            separator=",",
+            include_header=True
         )
 
     return None
 
 
 @timeit
-def tally_national_province(Election: Election) -> None:
+def tally_national_province(election: Election) -> None:
     """
     Generates results for national contests in each province and saves the results in CSV files.
 
     Parameters:
-        Election (Election): Election class instance containing data.
+        election (Election): Election class instance containing data.
 
     Returns:
         None
     """
     print("Generating results for national contests in each province...")
     _number_voters_prv = (
-        Election.results.unique(subset="PRECINCT_CODE")
+        election.results.unique(subset="PRECINCT_CODE", maintain_order=False)
         .group_by("PRV_NAME").agg(pl.col("NUMBER_VOTERS").sum())
     )
 
-    # Filter ond compute nly national contests
+    # Filter and compute only national contests
     _contest_codes = list(CONTESTS.values())
     _national_results = (
-        Election.results[["PRV_NAME", "CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
+        election.results[["PRV_NAME", "CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
         .filter(pl.col("CONTEST_CODE").is_in(_contest_codes))
-    )
-    _national_results = (
-        _national_results.group_by(["CONTEST_CODE", "PRV_NAME", "CANDIDATE_CODE"])
+        .group_by(["CONTEST_CODE", "PRV_NAME", "CANDIDATE_CODE"])
         .agg(pl.col("VOTES_AMOUNT").sum())
     )
 
-    # Partition by contest code
+    # Partition by contest code - keys are tuples like (199000,)
     _national_results_partitions = _national_results.partition_by("CONTEST_CODE", as_dict=True)
 
-    # Loop thru contest codes and tally results
+    # Loop through contest codes and tally results
     for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
-        if _contest_code in _national_results_partitions:
-            generate_tally_province_contest(_national_results_partitions[_contest_code], Election.candidates, _contest_code, _number_voters_prv)
+        # partition_by returns tuple keys, so we need to match (_contest_code,)
+        if (_contest_code,) in _national_results_partitions:
+            generate_tally_province_contest(
+                _national_results_partitions[(_contest_code,)],
+                election.candidates,
+                _contest_code,
+                _number_voters_prv
+            )
 
     return None
 
@@ -337,38 +361,37 @@ def generate_leading_candidate(results: pl.DataFrame, candidates: pl.DataFrame, 
     Generates leading candidates per province and saves the results in a CSV file.
 
     Parameters:
-        results (pd.DataFrame): DataFrame containing election results.
-        candidates (pd.DataFrame): DataFrame containing candidate information.
+        results (pl.DataFrame): DataFrame containing election results.
+        candidates (pl.DataFrame): DataFrame containing candidate information.
         contest_code (int): Code representing the election contest.
 
     Returns:
         None
     """
     _prv_df = (
-        results.group_by("PRV_NAME", "CANDIDATE_CODE")
+        results
+        .group_by("PRV_NAME", "CANDIDATE_CODE")
         .agg(pl.col("VOTES_AMOUNT").sum())
-        .sort(by="VOTES_AMOUNT", descending=True)
-        .unique(subset="PRV_NAME")
-    )
-    _prv_df = _prv_df.join(
-        candidates,
-        on="CANDIDATE_CODE"
+        .sort(["PRV_NAME", "VOTES_AMOUNT"], descending=[False, True])
+        .unique(subset="PRV_NAME", maintain_order=False)
+        .join(candidates, on="CANDIDATE_CODE")
     )
     _prv_df[["PRV_NAME", "CANDIDATE_NAME", "VOTES_AMOUNT"]].write_csv(
-        f"{STATIC_DIR}/map-{contest_code}.csv",
-        separator=","
+        f"{STATIC_DIR}map-{contest_code}.csv",
+        separator=",",
+        include_header=True
     )
 
     return None
 
 
 @timeit
-def leading_candidate_province(Election: Election) -> None:
+def leading_candidate_province(election: Election) -> None:
     """
     Generates leading candidates for each province and saves the results in CSV files.
 
     Parameters:
-        Election (Election): Election class instance containing data.
+        election (Election): Election class instance containing data.
 
     Returns:
         None
@@ -376,17 +399,22 @@ def leading_candidate_province(Election: Election) -> None:
     print("Generating leading national candidate per province...")
     _contest_codes = list(CONTESTS.values())
     _national_results = (
-        Election.results[["PRV_NAME", "CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
+        election.results[["PRV_NAME", "CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
         .filter(pl.col("CONTEST_CODE").is_in(_contest_codes))
     )
 
-    # Partition by contest code
+    # Partition by contest code - keys are tuples like (199000,)
     _national_results_partitions = _national_results.partition_by("CONTEST_CODE", as_dict=True)
 
-    # Loop thru contest codes and tally results
+    # Loop through contest codes and tally results
     for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
-        if _contest_code in _national_results_partitions:
-            generate_leading_candidate(_national_results_partitions[_contest_code], Election.candidates, _contest_code)
+        # partition_by returns tuple keys, so we need to match (_contest_code,)
+        if (_contest_code,) in _national_results_partitions:
+            generate_leading_candidate(
+                _national_results_partitions[(_contest_code,)],
+                election.candidates,
+                _contest_code
+            )
 
     return None
 
@@ -397,31 +425,37 @@ def generate_tally_contest(results: pl.DataFrame, candidates: pl.DataFrame, cont
 
     Parameters:
         results (pl.DataFrame): DataFrame containing election results.
-        candidates (pd.DataFrame): DataFrame containing candidate information.
+        candidates (pl.DataFrame): DataFrame containing candidate information.
         contest_code (int): Code representing the election contest.
+        number_votes (int): Total number of votes for percentage calculation.
 
     Returns:
         None
     """
-    _tally = results.with_columns(
-        PERCENTAGE = 100 * results["VOTES_AMOUNT"] / number_votes
+    _tally = (
+        results
+        .with_columns(
+            PERCENTAGE=100 * pl.col("VOTES_AMOUNT") / number_votes
+        )
+        .join(candidates, on="CANDIDATE_CODE")
+        .sort("VOTES_AMOUNT", descending=True)
     )
-    _tally = _tally.join(candidates, on="CANDIDATE_CODE").sort(by="VOTES_AMOUNT", descending=True)
     _tally[["CANDIDATE_NAME", "VOTES_AMOUNT", "PERCENTAGE"]].write_csv(
         f"{STATIC_DIR}{contest_code}.csv",
-        separator=","
+        separator=",",
+        include_header=True
     )
 
     return None
 
 
 @timeit
-def tally_national(Election: Election) -> None:
+def tally_national(election: Election) -> None:
     """
     Generates results for national contests and saves the results in CSV files.
 
     Parameters:
-        Election (Election): Election class instance containing data.
+        election (Election): Election class instance containing data.
 
     Returns:
         None
@@ -429,43 +463,48 @@ def tally_national(Election: Election) -> None:
     print("Generating results for national contests...")
     _contest_codes = list(CONTESTS.values())
     _national_results = (
-        Election.results[["CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
+        election.results[["CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
         .filter(pl.col("CONTEST_CODE").is_in(_contest_codes))
         .group_by(["CONTEST_CODE", "CANDIDATE_CODE"])
         .agg(pl.col("VOTES_AMOUNT").sum())
     )
-    _number_voters = int(Election.results.unique("PRECINCT_CODE")["NUMBER_VOTERS"].sum())
+    _number_voters = int(election.results.unique("PRECINCT_CODE", maintain_order=False)["NUMBER_VOTERS"].sum())
 
-    # Partition by contest code
+    # Partition by contest code - keys are tuples like (199000,)
     _national_results_partitions = _national_results.partition_by("CONTEST_CODE", as_dict=True)
 
-    # Loop thru contest codes and tally results
+    # Loop through contest codes and tally results
     for _contest_code in tqdm(_contest_codes, disable=NO_PROGRESS_BAR):
-        if _contest_code in _national_results_partitions:
-            generate_tally_contest(_national_results_partitions[_contest_code], Election.candidates, _contest_code, _number_voters)
+        # partition_by returns tuple keys, so we need to match (_contest_code,)
+        if (_contest_code,) in _national_results_partitions:
+            generate_tally_contest(
+                _national_results_partitions[(_contest_code,)],
+                election.candidates,
+                _contest_code,
+                _number_voters
+            )
 
     return None
 
 
 @timeit
-def tally_local(Election: Election) -> None:
+def tally_local(election: Election) -> None:
     """
     Generates local tallies for each contest and saves the results in CSV files.
 
     Parameters:
-        Election (Election): Election class instance containing data.
+        election (Election): Election class instance containing data.
 
     Returns:
         None
     """
     print("Generating local results for each contest...")
-    _contest_codes = Election.contests["CONTEST_CODE"].to_list()
+    _contest_codes = election.contests["CONTEST_CODE"].to_list()
     _skip_contests = list(CONTESTS.values())
-    _batch_size = NUMBER_OF_WORKERS
 
-    # Filter out national contests, group by contest code and add the votes.
+    # Filter out national contests, group by contest code and sum the votes.
     _local_results = (
-        Election.results[["CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
+        election.results[["CONTEST_CODE", "CANDIDATE_CODE", "VOTES_AMOUNT"]]
         .filter(~pl.col("CONTEST_CODE").is_in(_skip_contests))
         .group_by(["CONTEST_CODE", "CANDIDATE_CODE"])
         .agg(pl.col("VOTES_AMOUNT").sum())
@@ -477,7 +516,7 @@ def tally_local(Election: Election) -> None:
     # Process each partition
     for _contest_code, _local_tally in tqdm(_local_results_partitions.items(), disable=NO_PROGRESS_BAR):
         _number_votes = int(_local_tally["VOTES_AMOUNT"].sum())
-        generate_tally_contest(_local_tally, Election.candidates, _contest_code[0], _number_votes)
+        generate_tally_contest(_local_tally, election.candidates, _contest_code[0], _number_votes)
 
     return None
 
@@ -486,7 +525,7 @@ def tally_local(Election: Election) -> None:
 def read_results() -> Election:
     """
     Reads CSV files, populates the Election class, and returns the Election class instance.
-    Uses lazy evaluation for better memory usage and performance.
+    Uses lazy evaluation and streaming for better memory usage and performance.
 
     Returns:
         Election: Election class instance containing data.
@@ -495,10 +534,10 @@ def read_results() -> Election:
     _election_results = Election()
     _progress = tqdm(range(6), disable=NO_PROGRESS_BAR)
 
-    # Use lazy reading for all CSV files to optimize memory usage
+    # Read CSV files with optimized settings
     _progress.set_description("Candidates")
     _election_results.candidates = pl.scan_csv(
-        WORKING_DIR + "candidates.csv",
+        os.path.join(WORKING_DIR, "candidates.csv"),
         separator="|",
         has_header=True
     ).collect()
@@ -506,7 +545,7 @@ def read_results() -> Election:
 
     _progress.set_description("Contests")
     _election_results.contests = pl.scan_csv(
-        WORKING_DIR + "contests.csv",
+        os.path.join(WORKING_DIR, "contests.csv"),
         separator="|",
         has_header=True
     ).select("CONTEST_CODE").collect()
@@ -514,7 +553,7 @@ def read_results() -> Election:
 
     _progress.set_description("Parties")
     _election_results.parties = pl.scan_csv(
-        WORKING_DIR + "parties.csv",
+        os.path.join(WORKING_DIR, "parties.csv"),
         separator="|",
         has_header=True
     ).collect()
@@ -522,7 +561,7 @@ def read_results() -> Election:
 
     _progress.set_description("Precincts")
     _election_results.precincts = pl.scan_csv(
-        WORKING_DIR + "precincts.csv",
+        os.path.join(WORKING_DIR, "precincts.csv"),
         separator="|",
         has_header=True
     ).select(["VCM_ID", "REG_NAME", "PRV_NAME", "CLUSTERED_PREC", "REGISTERED_VOTERS"]).collect()
@@ -530,7 +569,7 @@ def read_results() -> Election:
 
     _progress.set_description("Results")
     _election_results.results = pl.scan_csv(
-        WORKING_DIR + "results.csv",
+        os.path.join(WORKING_DIR, "results.csv"),
         separator="|",
         has_header=True
     ).collect()
@@ -561,7 +600,7 @@ def read_results() -> Election:
 
 
 @timeit
-def main(cmds: List[str]) -> Union[bool, None]:
+def main(cmds: List[str]) -> bool:
     """
     Generates static files from Smartmatic VCMs. Commands available:
 
@@ -602,7 +641,7 @@ def main(cmds: List[str]) -> Union[bool, None]:
     if "all" in cmds:
         cmds = [cmd for cmd in commands_available if cmd != "all"]
 
-    # Show default variables
+    # Show configuration
     print(f"Concurrency enabled: {CONCURRENCY}")
     print(f"Number of workers: {NUMBER_OF_WORKERS}")
     print(f"Disable Progress bar: {NO_PROGRESS_BAR}")
@@ -610,7 +649,7 @@ def main(cmds: List[str]) -> Union[bool, None]:
     print(f"Static directory: {STATIC_DIR}")
 
     # Always read results first
-    Election_results = read_results()
+    election_results = read_results()
 
     # Process commands
     commands_to_run = []
@@ -621,18 +660,17 @@ def main(cmds: List[str]) -> Union[bool, None]:
 
     if CONCURRENCY and commands_to_run:
         print(f"Running {len(commands_to_run)} commands with {NUMBER_OF_WORKERS} workers")
+        # Note: ThreadPoolExecutor is kept for I/O-bound tasks, but Polars already uses multiple threads internally
         with concurrent.futures.ThreadPoolExecutor(max_workers=NUMBER_OF_WORKERS) as executor:
-            # Map command names to functions and submit them to the executor
             futures = {
-                executor.submit(globals()[cmd_func], Election_results): cmd_func
+                executor.submit(globals()[cmd_func], election_results): cmd_func
                 for cmd_func in commands_to_run
             }
 
-            # Process results as they complete
             for future in concurrent.futures.as_completed(futures):
                 cmd_name = futures[future]
                 try:
-                    future.result()  # This will raise any exceptions that occurred
+                    future.result()
                     print(f"Command {cmd_name} completed successfully")
                 except Exception as e:
                     print(f"Command {cmd_name} failed with error: {str(e)}")
@@ -640,12 +678,12 @@ def main(cmds: List[str]) -> Union[bool, None]:
         # Run commands sequentially
         for cmd_func in commands_to_run:
             try:
-                globals()[cmd_func](Election_results)
+                globals()[cmd_func](election_results)
                 print(f"Command {cmd_func} completed successfully")
             except Exception as e:
                 print(f"Command {cmd_func} failed with error: {str(e)}")
 
-    return None
+    return True
 
 
 # Environment variables
